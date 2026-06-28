@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /Users/bidemioritunmise/Desktop/neolingo/src/components/ui -name \"NeoDicoWord*\" -o -name \"LanguageSwitchTag*\" -o -name \"SearchBar*\" 2>/dev/null)",
+      "Read(//Users/bidemioritunmise/Desktop/neolingo/src/components/ui/**)",
+      "Bash(find /Users/bidemioritunmise/Desktop/neolingo/prisma -name \"schema.prisma\" | head -1 | xargs grep -E \"^model |@@map\" 2>/dev/null | head -60)",
+      "Read(//Users/bidemioritunmise/Desktop/neolingo/prisma/**)",
+      "Bash(grep -n \"getUserContext\\\\|userTargetLanguage\\\\|communityId\\\\|targetLanguages\" /Users/bidemioritunmise/Desktop/neolingo/src/actions/auth.ts | head -30)",
+      "Read(//Users/bidemioritunmise/Desktop/neolingo/src/actions/**)",
+      "Bash(dart analyze *)",
+      "Bash(grep -v \"^$\")",
+      "Bash(flutter analyze *)",
+      "Bash(/usr/local/bin/flutter analyze *)",
+      "Bash(which flutter *)",
+      "Read(//Users/bidemioritunmise/**)",
+      "Bash(/Users/bidemioritunmise/Downloads/flutter/bin/flutter analyze *)",
+      "Bash(flutter pub *)",
+      "Bash(/Users/bidemioritunmise/flutter/bin/flutter pub *)",
+      "Bash(/Users/bidemioritunmise/Downloads/flutter/bin/flutter pub *)",
+      "Bash(grep -E \"\\\\.\\(tsx?|jsx?\\)$\")",
+      "Bash(xargs cat)",
+      "Bash(flutter clean *)",
+      "Bash(~/.flutter/bin/flutter clean *)",
+      "Bash(~/.flutter/bin/flutter pub *)",
+      "Bash(/Users/bidemioritunmise/Downloads/flutter/bin/flutter clean *)"
+    ]
+  }
+}
