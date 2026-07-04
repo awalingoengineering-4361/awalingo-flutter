@@ -6,11 +6,13 @@ enum NavTab { dictionary, vote, translate, menu }
 class AppBottomNav extends StatelessWidget {
   final NavTab current;
   final ValueChanged<NavTab> onTap;
+  final bool isJuror;
 
   const AppBottomNav({
     super.key,
     required this.current,
     required this.onTap,
+    this.isJuror = false,
   });
 
   @override
@@ -26,7 +28,7 @@ class AppBottomNav extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           _NavItem(label: 'AwaDiko',  icon: Icons.menu_book_outlined,   activeIcon: Icons.menu_book,      active: current == NavTab.dictionary, onTap: () => onTap(NavTab.dictionary)),
-          _NavItem(label: 'Vote',     icon: Icons.how_to_vote_outlined,  activeIcon: Icons.how_to_vote,    active: current == NavTab.vote,       onTap: () => onTap(NavTab.vote)),
+          _NavItem(label: isJuror ? 'Jury' : 'Vote', icon: Icons.how_to_vote_outlined, activeIcon: Icons.how_to_vote, active: current == NavTab.vote, onTap: () => onTap(NavTab.vote)),
           _NavItem(label: 'Translate',icon: Icons.lightbulb_outline,     activeIcon: Icons.lightbulb,      active: current == NavTab.translate,  onTap: () => onTap(NavTab.translate)),
           _NavItem(label: 'Menu',     icon: Icons.grid_view_outlined,    activeIcon: Icons.grid_view,      active: current == NavTab.menu,       onTap: () => onTap(NavTab.menu)),
         ],

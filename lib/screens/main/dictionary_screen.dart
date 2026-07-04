@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
+import 'vote_screen.dart';
 
 // ── Models ────────────────────────────────────────────────────────────────────
 
@@ -598,7 +599,16 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
             isOpen: _openWordId == term.id,
             onToggle: () => setState(() => _openWordId = _openWordId == term.id ? null : term.id),
             onTranslationTap: term.translation != null ? () => _switchToTranslation(term) : null,
-            onVote: () => _showSnack('Vote feature coming soon'),
+            onVote: () {
+              if (_communityLanguageId != null) {
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => VoteDetailScreen(
+                    termId: term.id,
+                    communityLangId: _communityLanguageId!,
+                  ),
+                ));
+              }
+            },
             onTranslate: () => _showSnack('Suggest translation coming soon'),
           );
         },

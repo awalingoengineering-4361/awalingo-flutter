@@ -22,7 +22,8 @@
       "Bash(flutter clean *)",
       "Bash(~/.flutter/bin/flutter clean *)",
       "Bash(~/.flutter/bin/flutter pub *)",
-      "Bash(/Users/bidemioritunmise/Downloads/flutter/bin/flutter clean *)"
+      "Bash(/Users/bidemioritunmise/Downloads/flutter/bin/flutter clean *)",
+      "Bash(/Users/bidemioritunmise/development/flutter/bin/flutter analyze *)"
     ]
   }
 }

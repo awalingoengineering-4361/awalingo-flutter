@@ -9,6 +9,7 @@ import 'screens/auth/sign_in_screen.dart';
 import 'screens/auth/sign_up_screen.dart';
 import 'screens/app_shell.dart';
 import 'screens/main/request_screen.dart';
+import 'screens/main/profile_screen.dart';
 import 'widgets/auth_guard.dart';
 
 Future<void> main() async {
@@ -80,6 +81,7 @@ class _AwalingoAppState extends State<AwalingoApp> {
 
               // ── Main app ───────────────────────────────────────
               '/home': (_) => const AuthGuard(child: AppShell()),
+              '/profile': (_) => const AuthGuard(child: ProfileScreen()),
               '/request': (_) => const AuthGuard(child: RequestScreen()),
             },
           ),

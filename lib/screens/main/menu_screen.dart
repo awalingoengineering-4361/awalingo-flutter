@@ -2,97 +2,89 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
-import '../../services/theme_notifier.dart';
-
-// ── Model ─────────────────────────────────────────────────────────────────────
-
-class _ProfileData {
-  final String? name;
-  final int cowryBalance;
-  final bool allowInAppNotifications;
-  final String? communityName;
-  final String? communityShort;
-  final String? communityIcon;
-  final int neoCount;
-
-  const _ProfileData({
-    this.name,
-    this.cowryBalance = 0,
-    this.allowInAppNotifications = true,
-    this.communityName,
-    this.communityShort,
-    this.communityIcon,
-    this.neoCount = 0,
-  });
-
-  _ProfileData copyWith({bool? allowInAppNotifications}) => _ProfileData(
-        name: name,
-        cowryBalance: cowryBalance,
-        allowInAppNotifications:
-            allowInAppNotifications ?? this.allowInAppNotifications,
-        communityName: communityName,
-        communityShort: communityShort,
-        communityIcon: communityIcon,
-        neoCount: neoCount,
-      );
-}
+import '../../widgets/bottom_nav.dart';
 
 // ── Service ───────────────────────────────────────────────────────────────────
 
-class _MenuService {
+class _HomeService {
   final SupabaseClient _db = Supabase.instance.client;
 
-  Future<_ProfileData> loadProfile(String userId) async {
-    final profile = await _db
-        .from('user_profile')
-        .select('name, cowryBalance, allowInAppNotifications')
-        .eq('userId', userId)
-        .maybeSingle();
+  Future<({String? voteWord, String communityName, int communityId, String role})>
+      load(String userId) async {
+    // Run community, role, and neo queries in parallel
+    final results = await Future.wait([
+      _db
+          .from('user_target_languages')
+          .select('language:languages!languageId(id, name)')
+          .eq('userId', userId)
+          .maybeSingle(),
+      _db
+          .from('user_roles')
+          .select('role:roles!roleId(name)')
+          .eq('userId', userId)
+          .limit(1)
+          .maybeSingle(),
+    ]);
 
-    final utl = await _db
-        .from('user_target_languages')
-        .select('language:languages!languageId(id, name, short, icon)')
-        .eq('userId', userId)
-        .maybeSingle();
-
-    final neoRows =
-        await _db.from('neos').select('id').eq('userId', userId);
+    final utl = results[0];
+    final userRoleRow = results[1];
 
     final lang = utl?['language'] as Map<String, dynamic>?;
+    final communityId = (lang?['id'] as int?) ?? 1;
+    final communityName = (lang?['name'] as String?) ?? 'Community';
 
-    return _ProfileData(
-      name: profile?['name'] as String?,
-      cowryBalance: (profile?['cowryBalance'] as int?) ?? 0,
-      allowInAppNotifications:
-          (profile?['allowInAppNotifications'] as bool?) ?? true,
-      communityName: lang?['name'] as String?,
-      communityShort: lang?['short'] as String?,
-      communityIcon: lang?['icon'] as String?,
-      neoCount: neoRows.length,
+    final roleMap = userRoleRow?['role'] as Map<String, dynamic>?;
+    final role = (roleMap?['name'] as String?) ?? 'EXPLORER';
+
+    final neoRows = await _db
+        .from('neos')
+        .select('termId, ratingCount, rejectCount')
+        .eq('languageId', communityId)
+        .gt('ratingCount', 0)
+        .limit(20);
+
+    final validTermIds = neoRows
+        .where((n) =>
+            (n['rejectCount'] as int? ?? 0) < (n['ratingCount'] as int? ?? 0))
+        .map((n) => n['termId'] as int)
+        .toSet()
+        .toList();
+
+    String? voteWord;
+    if (validTermIds.isNotEmpty) {
+      final term = await _db
+          .from('terms')
+          .select('text')
+          .eq('id', validTermIds.first)
+          .maybeSingle();
+      voteWord = term?['text'] as String?;
+    }
+
+    return (
+      voteWord: voteWord,
+      communityName: communityName,
+      communityId: communityId,
+      role: role,
     );
-  }
-
-  Future<void> updateNotifications(String userId, bool value) async {
-    await _db
-        .from('user_profile')
-        .update({'allowInAppNotifications': value}).eq('userId', userId);
   }
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 class MenuScreen extends StatefulWidget {
-  const MenuScreen({super.key});
+  final void Function(NavTab)? onNavigate;
+  const MenuScreen({super.key, this.onNavigate});
 
   @override
   State<MenuScreen> createState() => _MenuScreenState();
 }
 
 class _MenuScreenState extends State<MenuScreen> {
-  final _service = _MenuService();
+  final _service = _HomeService();
   bool _loading = true;
-  _ProfileData? _data;
   bool _loadDone = false;
+  String? _voteWord;
+  String _role = 'EXPLORER';
 
   @override
   void didChangeDependencies() {
@@ -110,31 +102,17 @@ class _MenuScreenState extends State<MenuScreen> {
       return;
     }
     try {
-      final data = await _service.loadProfile(userId);
-      if (mounted) setState(() { _data = data; _loading = false; });
-    } catch (e) {
-      debugPrint('Menu load error: $e');
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _toggleNotifications(bool value) async {
-    final userId = AuthProvider.of(context).user?.id;
-    if (userId == null) return;
-    setState(() => _data = _data?.copyWith(allowInAppNotifications: value));
-    try {
-      await _service.updateNotifications(userId, value);
-    } catch (e) {
-      setState(() => _data = _data?.copyWith(allowInAppNotifications: !value));
+      final data = await _service.load(userId);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Could not update preference',
-              style: TextStyle(fontFamily: 'Metropolis')),
-          behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ));
+        setState(() {
+          _voteWord = data.voteWord;
+          _role = data.role;
+          _loading = false;
+        });
       }
+    } catch (e) {
+      debugPrint('MenuScreen load error: $e');
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -143,20 +121,17 @@ class _MenuScreenState extends State<MenuScreen> {
     final c = AppColorScheme.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    final user = AuthProvider.of(context).user;
+    final name = user?.userMetadata?['name'] as String? ??
+        user?.userMetadata?['display_name'] as String? ??
+        user?.email?.split('@').first ??
+        'User';
+    final firstName = name.split(' ').first;
+
     if (_loading) {
       return Center(
           child: CircularProgressIndicator(color: c.primary, strokeWidth: 2));
     }
-
-    final user = AuthProvider.of(context).user;
-    final theme = ThemeProvider.of(context);
-    final email = user?.email ?? '';
-    final displayName = _data?.name?.isNotEmpty == true
-        ? _data!.name!
-        : email.split('@').first;
-    final initials = _initials(displayName);
-    final joinedAt =
-        user?.createdAt != null ? DateTime.tryParse(user!.createdAt) : null;
 
     return RefreshIndicator(
       onRefresh: () async {
@@ -166,396 +141,311 @@ class _MenuScreenState extends State<MenuScreen> {
       color: c.primary,
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Profile card ──────────────────────────────────────────────
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: c.card,
-                borderRadius: BorderRadius.circular(32),
-                border: Border.all(color: c.border),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.07),
-                    blurRadius: 15,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
+            // ── Greeting ──────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Row(
                 children: [
-                  // Avatar with border ring
-                  Container(
-                    width: 96,
-                    height: 96,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: const Color(0xFF9C62D9),
-                      border: Border.all(color: c.card, width: 4),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.12),
-                          blurRadius: 10,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Center(
-                      child: Text(
-                        initials,
-                        style: const TextStyle(
-                          fontFamily: 'Parkinsans',
-                          fontSize: 28,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-
-                  // Name
                   Text(
-                    displayName,
+                    'Hi, $firstName',
                     style: TextStyle(
                       fontFamily: 'Parkinsans',
-                      fontSize: 20,
+                      fontSize: 22,
                       fontWeight: FontWeight.w600,
                       color: c.foreground,
                     ),
                   ),
-                  const SizedBox(height: 4),
-
-                  // Email
-                  Text(
-                    email,
-                    style: TextStyle(
-                      fontFamily: 'Metropolis',
-                      fontSize: 13,
-                      color: c.mutedForeground,
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF9C62D9),
+                      borderRadius: BorderRadius.circular(4),
                     ),
-                  ),
-
-                  const SizedBox(height: 16),
-                  Divider(color: c.border, height: 1),
-                  const SizedBox(height: 14),
-
-                  // Joined date
-                  if (joinedAt != null)
-                    Text(
-                      'Member since ${_formatDate(joinedAt)}',
-                      style: TextStyle(
+                    child: Text(
+                      _role[0] + _role.substring(1).toLowerCase(),
+                      style: const TextStyle(
                         fontFamily: 'Metropolis',
-                        fontSize: 12,
-                        color: c.mutedForeground,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
                       ),
                     ),
+                  ),
                 ],
               ),
+            ),
+
+            // ── Vote card ─────────────────────────────────────────────────
+            _CtaCard(
+              title: 'Vote for today\'s best word',
+              subtitle: 'Vote for the top ranked suggested words',
+              word: _voteWord ?? 'Awalingo',
+              ctaLabel: 'Word of the day',
+              buttonLabel: 'Vote',
+              buttonIcon: Icons.how_to_vote_outlined,
+              innerBg: isDark
+                  ? const Color(0xFF14532D).withValues(alpha: 0.35)
+                  : const Color(0xFFE4FDE4),
+              innerBorder: isDark
+                  ? const Color(0xFF166534)
+                  : const Color(0xFFC8FAC9),
+              pillBg: isDark
+                  ? const Color(0xFF166534).withValues(alpha: 0.5)
+                  : const Color(0xFFE4FDE4),
+              pillText: isDark
+                  ? const Color(0xFF86EFAC)
+                  : const Color(0xFF50954D),
+              wordColor: isDark
+                  ? const Color(0xFFFAFAFA)
+                  : const Color(0xFF111111),
+              onTap: () => widget.onNavigate?.call(NavTab.vote),
+              c: c,
+              isDark: isDark,
             ),
             const SizedBox(height: 12),
 
-            // ── Stats row ─────────────────────────────────────────────────
-            Row(
-              children: [
-                Expanded(
-                  child: _StatCard(
-                    iconWidget: Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFBBF24),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                            color: const Color(0xFFFDE68A), width: 3),
-                      ),
-                      child: const Icon(Icons.emoji_events,
-                          color: Color(0xFF1A1A1A), size: 22),
-                    ),
-                    value: '${_data?.cowryBalance ?? 0} 🐚',
-                    label: 'Cowries',
-                    c: c,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _StatCard(
-                    iconWidget: Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF9C62D9).withValues(alpha: 0.15),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Center(
-                          child: Text('✍️',
-                              style: TextStyle(fontSize: 22))),
-                    ),
-                    value: '${_data?.neoCount ?? 0}',
-                    label: 'Words',
-                    c: c,
-                  ),
-                ),
-              ],
+            // ── Explore card ──────────────────────────────────────────────
+            _CtaCard(
+              title: 'Explore Awadiko',
+              subtitle: 'Browse words and their community translations',
+              word: 'The community dictionary',
+              ctaLabel: 'Awadiko',
+              buttonLabel: 'Explore',
+              buttonIcon: Icons.menu_book_outlined,
+              innerBg: isDark
+                  ? const Color(0xFF164E63).withValues(alpha: 0.35)
+                  : const Color(0xFFECFEFF),
+              innerBorder: isDark
+                  ? const Color(0xFF155E75)
+                  : const Color(0xFFA5F3FC),
+              pillBg: isDark
+                  ? const Color(0xFF155E75).withValues(alpha: 0.5)
+                  : const Color(0xFFCFFAFE),
+              pillText: isDark
+                  ? const Color(0xFF67E8F9)
+                  : const Color(0xFF0E7490),
+              wordColor: isDark
+                  ? const Color(0xFFFAFAFA)
+                  : const Color(0xFF111111),
+              onTap: () => widget.onNavigate?.call(NavTab.dictionary),
+              c: c,
+              isDark: isDark,
             ),
             const SizedBox(height: 12),
 
-            // ── Settings card ─────────────────────────────────────────────
-            Container(
-              decoration: BoxDecoration(
-                color: c.card,
-                borderRadius: BorderRadius.circular(32),
-                border: Border.all(color: c.border),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.07),
-                    blurRadius: 15,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Settings header
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: c.secondary,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(Icons.settings_outlined,
-                              size: 20, color: c.mutedForeground),
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          'Settings',
-                          style: TextStyle(
-                            fontFamily: 'Parkinsans',
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: c.foreground,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Divider(height: 1, color: c.border),
-
-                  // PREFERENCES group
-                  _GroupLabel('PREFERENCES', c: c),
-                  _SettingsTile(
-                    iconBg: c.secondary,
-                    iconColor: c.mutedForeground,
-                    icon: Icons.notifications_outlined,
-                    label: 'In-App Notifications',
-                    trailing: Switch(
-                      value: _data?.allowInAppNotifications ?? true,
-                      onChanged: _toggleNotifications,
-                      activeThumbColor: const Color(0xFF9C62D9),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    c: c,
-                  ),
-                  _SettingsTile(
-                    iconBg: c.secondary,
-                    iconColor: theme.isDark
-                        ? const Color(0xFFF59E0B)
-                        : c.mutedForeground,
-                    icon: theme.isDark
-                        ? Icons.wb_sunny_rounded
-                        : Icons.dark_mode_outlined,
-                    label: 'Dark Mode',
-                    trailing: Switch(
-                      value: theme.isDark,
-                      onChanged: (_) => theme.toggle(),
-                      activeThumbColor: const Color(0xFF9C62D9),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    c: c,
-                  ),
-
-                  Divider(height: 1, color: c.border),
-
-                  // COMMUNITY group
-                  _GroupLabel('COMMUNITY', c: c),
-                  _SettingsTile(
-                    iconBg: isDark
-                        ? const Color(0xFF1E3A8A).withValues(alpha: 0.3)
-                        : const Color(0xFFEFF6FF),
-                    iconColor: isDark
-                        ? const Color(0xFF60A5FA)
-                        : const Color(0xFF2563EB),
-                    icon: Icons.language,
-                    label: 'Change Community',
-                    subtitle: _data?.communityName,
-                    onTap: () =>
-                        Navigator.of(context).pushNamed('/language-setup'),
-                    c: c,
-                  ),
-                  _SettingsTile(
-                    iconBg: isDark
-                        ? const Color(0xFF581C87).withValues(alpha: 0.3)
-                        : const Color(0xFFFAF5FF),
-                    iconColor: isDark
-                        ? const Color(0xFFA855F7)
-                        : const Color(0xFF9333EA),
-                    icon: Icons.menu_book_outlined,
-                    label: 'Community Guidelines',
-                    onTap: () {},
-                    c: c,
-                  ),
-
-                  Divider(height: 1, color: c.border),
-
-                  // MORE group (collapsible)
-                  _GroupLabel('MORE', c: c),
-                  _SettingsTile(
-                    iconBg: c.secondary,
-                    iconColor: c.mutedForeground,
-                    icon: Icons.lock_outline,
-                    label: 'Privacy Settings',
-                    onTap: () {},
-                    c: c,
-                  ),
-                  _SettingsTile(
-                    iconBg: c.secondary,
-                    iconColor: c.mutedForeground,
-                    icon: Icons.gavel_outlined,
-                    label: 'Legal Hub',
-                    onTap: () {},
-                    c: c,
-                  ),
-
-                  Divider(height: 1, color: c.border),
-
-                  // Logout
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    child: InkWell(
-                      onTap: () async {
-                        await AuthProvider.of(context).logout();
-                        if (context.mounted) {
-                          Navigator.of(context).pushNamedAndRemoveUntil(
-                              '/signin', (route) => false);
-                        }
-                      },
-                      borderRadius: BorderRadius.circular(12),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 14),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: Colors.red.withValues(alpha: 0.1),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(Icons.logout,
-                                  size: 20, color: Colors.red),
-                            ),
-                            const SizedBox(width: 14),
-                            const Text(
-                              'Log Out',
-                              style: TextStyle(
-                                fontFamily: 'Metropolis',
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.red,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                ],
-              ),
+            // ── Request card ──────────────────────────────────────────────
+            _CtaCard(
+              title: 'Request A Word',
+              subtitle: 'Got a word in your mind?',
+              word: 'Ask the community to mine Words',
+              ctaLabel: 'Word on your mind',
+              buttonLabel: 'Request',
+              buttonIcon: Icons.book_outlined,
+              innerBg: isDark
+                  ? const Color(0xFF3B0764).withValues(alpha: 0.35)
+                  : const Color(0xFFF8F3FD),
+              innerBorder: isDark
+                  ? const Color(0xFF4C1D95)
+                  : const Color(0xFFEADDF7),
+              pillBg: isDark
+                  ? const Color(0xFF4C1D95).withValues(alpha: 0.5)
+                  : const Color(0xFFF8F3FD),
+              pillText: isDark
+                  ? const Color(0xFFD8B4FE)
+                  : const Color(0xFF292929),
+              wordColor: isDark
+                  ? const Color(0xFFD8B4FE)
+                  : const Color(0xFF6826AF),
+              onTap: () => Navigator.of(context).pushNamed('/request'),
+              c: c,
+              isDark: isDark,
             ),
+            const SizedBox(height: 12),
+
+            // ── Social card ───────────────────────────────────────────────
+            _SocialCard(c: c, isDark: isDark),
+            const SizedBox(height: 12),
           ],
         ),
       ),
     );
   }
-
-  static String _initials(String name) {
-    final parts = name.trim().split(RegExp(r'\s+'));
-    if (parts.isEmpty) return '?';
-    if (parts.length == 1) return parts[0][0].toUpperCase();
-    return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
-  }
-
-  static String _formatDate(DateTime dt) {
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-    return '${months[dt.month - 1]} ${dt.year}';
-  }
 }
 
-// ── Sub-widgets ───────────────────────────────────────────────────────────────
+// ── CTA Card ──────────────────────────────────────────────────────────────────
 
-class _StatCard extends StatelessWidget {
-  final Widget iconWidget;
-  final String value;
-  final String label;
+class _CtaCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final String word;
+  final String ctaLabel;
+  final String buttonLabel;
+  final IconData buttonIcon;
+  final Color innerBg;
+  final Color innerBorder;
+  final Color pillBg;
+  final Color pillText;
+  final Color wordColor;
+  final VoidCallback onTap;
   final AppColorScheme c;
+  final bool isDark;
 
-  const _StatCard({
-    required this.iconWidget,
-    required this.value,
-    required this.label,
+  const _CtaCard({
+    required this.title,
+    required this.subtitle,
+    required this.word,
+    required this.ctaLabel,
+    required this.buttonLabel,
+    required this.buttonIcon,
+    required this.innerBg,
+    required this.innerBorder,
+    required this.pillBg,
+    required this.pillText,
+    required this.wordColor,
+    required this.onTap,
     required this.c,
+    required this.isDark,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      padding: const EdgeInsets.all(20),
+      width: double.infinity,
       decoration: BoxDecoration(
         color: c.card,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: c.border),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.06),
-            blurRadius: 15,
-            offset: const Offset(0, 2),
+            color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.06),
+            blurRadius: 20,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          iconWidget,
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(value, style: TextStyle(
-                fontFamily: 'Parkinsans',
-                fontSize: 17,
-                fontWeight: FontWeight.w600,
-                color: c.foreground,
-              )),
-              Text(label, style: TextStyle(
-                fontFamily: 'Metropolis',
-                fontSize: 11,
-                color: c.mutedForeground,
-              )),
-            ],
+          // Card header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontFamily: 'Parkinsans',
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    color: c.foreground,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontFamily: 'Metropolis',
+                    fontSize: 13,
+                    color: c.mutedForeground,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Tinted inner box
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: innerBg,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: innerBorder),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      // Pill label
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: pillBg,
+                          borderRadius: BorderRadius.circular(100),
+                        ),
+                        child: Text(
+                          ctaLabel,
+                          style: TextStyle(
+                            fontFamily: 'Metropolis',
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: pillText,
+                          ),
+                        ),
+                      ),
+                      // Action button
+                      GestureDetector(
+                        onTap: onTap,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFFFAFAFA)
+                                : const Color(0xFF111111),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                buttonIcon,
+                                size: 15,
+                                color: isDark
+                                    ? const Color(0xFF0A0A0A)
+                                    : Colors.white,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                buttonLabel,
+                                style: TextStyle(
+                                  fontFamily: 'Metropolis',
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark
+                                      ? const Color(0xFF0A0A0A)
+                                      : Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    word,
+                    style: TextStyle(
+                      fontFamily: 'Parkinsans',
+                      fontSize: 22,
+                      fontWeight: FontWeight.w300,
+                      color: wordColor,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),
@@ -563,96 +453,144 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-class _GroupLabel extends StatelessWidget {
-  final String text;
+// ── Social Card ───────────────────────────────────────────────────────────────
+
+class _SocialCard extends StatelessWidget {
   final AppColorScheme c;
-  const _GroupLabel(this.text, {required this.c});
+  final bool isDark;
+
+  const _SocialCard({required this.c, required this.isDark});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 6),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontFamily: 'Metropolis',
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: c.mutedForeground,
-          letterSpacing: 0.8,
-        ),
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: c.card,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: c.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.06),
+            blurRadius: 20,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'We Are Social',
+                  style: TextStyle(
+                    fontFamily: 'Parkinsans',
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    color: c.foreground,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  "Join us on social media and don't miss any updates.",
+                  style: TextStyle(
+                    fontFamily: 'Metropolis',
+                    fontSize: 13,
+                    color: c.mutedForeground,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? const Color(0xFF4C0519).withValues(alpha: 0.2)
+                    : const Color(0xFFFFF1F2),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                    color: isDark
+                        ? const Color(0xFF9F1239)
+                        : const Color(0xFFFECDD3)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _SocialButton(
+                    icon: Icons.smart_display_outlined,
+                    label: 'YouTube',
+                    isDark: isDark,
+                    c: c,
+                  ),
+                  const SizedBox(width: 12),
+                  _SocialButton(
+                    icon: Icons.music_note_outlined,
+                    label: 'TikTok',
+                    isDark: isDark,
+                    c: c,
+                  ),
+                  const SizedBox(width: 12),
+                  _SocialButton(
+                    icon: Icons.business_center_outlined,
+                    label: 'LinkedIn',
+                    isDark: isDark,
+                    c: c,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _SettingsTile extends StatelessWidget {
-  final Color iconBg;
-  final Color iconColor;
+class _SocialButton extends StatelessWidget {
   final IconData icon;
   final String label;
-  final String? subtitle;
-  final Widget? trailing;
-  final VoidCallback? onTap;
+  final bool isDark;
   final AppColorScheme c;
 
-  const _SettingsTile({
-    required this.iconBg,
-    required this.iconColor,
+  const _SocialButton({
     required this.icon,
     required this.label,
-    this.subtitle,
-    this.trailing,
-    this.onTap,
+    required this.isDark,
     required this.c,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: iconBg,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icon, size: 20, color: iconColor),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(label, style: TextStyle(
-                      fontFamily: 'Metropolis',
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: c.foreground,
-                    )),
-                    if (subtitle != null)
-                      Text(subtitle!, style: TextStyle(
-                        fontFamily: 'Metropolis',
-                        fontSize: 12,
-                        color: c.mutedForeground,
-                      )),
-                  ],
-                ),
-              ),
-              if (trailing != null) trailing!
-              else if (onTap != null)
-                Icon(Icons.chevron_right, size: 18, color: c.mutedForeground),
-            ],
-          ),
+    return GestureDetector(
+      onTap: () {},
+      child: Container(
+        width: 56,
+        height: 56,
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF262626) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+              color: isDark
+                  ? const Color(0xFF404040)
+                  : Colors.white.withValues(alpha: 0.8)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
+        child: Icon(icon,
+            size: 24,
+            color: isDark ? const Color(0xFFD4D4D4) : const Color(0xFF404040)),
       ),
     );
   }
