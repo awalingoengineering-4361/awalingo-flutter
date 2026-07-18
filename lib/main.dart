@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'config/app_config.dart';
 import 'theme/app_theme.dart';
 import 'services/auth_provider.dart';
 import 'services/theme_notifier.dart';
@@ -15,19 +16,12 @@ import 'widgets/auth_guard.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  const supabaseUrl = String.fromEnvironment(
-    'SUPABASE_URL',
-    defaultValue: 'https://zweoltjsdksjagasbndm.supabase.co',
-  );
-  const supabaseAnonKey = String.fromEnvironment(
-    'SUPABASE_ANON_KEY',
-    defaultValue:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3ZW9sdGpzZGtzamFnYXNibmRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI2MTEwNTUsImV4cCI6MjA3ODE4NzA1NX0.cW9kJdDkGI4ZlVV2oxd75UHuWe2go4-oiplis4YvMxI',
-  );
+  const config = AppConfig.fromEnvironment();
+  config.validate();
 
   await Supabase.initialize(
-    url: supabaseUrl,
-    anonKey: supabaseAnonKey,
+    url: config.supabaseUrl,
+    publishableKey: config.supabaseAnonKey,
   );
 
   runApp(const AwalingoApp());
@@ -76,8 +70,10 @@ class _AwalingoAppState extends State<AwalingoApp> {
               // ── Auth ───────────────────────────────────────────
               // Force light theme on auth screens — they use AppColors (static
               // light palette) and should not adapt to dark mode.
-              '/signin': (_) => Theme(data: AppTheme.light, child: const SignInScreen()),
-              '/signup': (_) => Theme(data: AppTheme.light, child: const SignUpScreen()),
+              '/signin': (_) =>
+                  Theme(data: AppTheme.light, child: const SignInScreen()),
+              '/signup': (_) =>
+                  Theme(data: AppTheme.light, child: const SignUpScreen()),
 
               // ── Main app ───────────────────────────────────────
               '/home': (_) => const AuthGuard(child: AppShell()),
