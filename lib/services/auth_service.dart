@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AuthService {
@@ -47,13 +48,18 @@ class AuthService {
     }
   }
 
+  // On web, redirect back to the current localhost origin (e.g. http://localhost:3000).
+  // On mobile, use the custom deep-link scheme so the OS routes the callback back into the app.
+  static String? get _oauthRedirect =>
+      kIsWeb ? Uri.base.origin : 'io.supabase.awalingo://login-callback';
+
   // ─── Google OAuth ─────────────────────────────────────────────────────────
   // Mirrors: supabase.auth.signInWithOAuth({ provider: 'google' })
   Future<void> signInWithGoogle() async {
     try {
       await _supabase.auth.signInWithOAuth(
         OAuthProvider.google,
-        redirectTo: 'io.supabase.awalingo://login-callback',
+        redirectTo: _oauthRedirect,
       );
     } on AuthException catch (e) {
       throw _friendlyError(e.message);
@@ -68,7 +74,7 @@ class AuthService {
     try {
       await _supabase.auth.signInWithOAuth(
         OAuthProvider.apple,
-        redirectTo: 'io.supabase.awalingo://login-callback',
+        redirectTo: _oauthRedirect,
       );
     } on AuthException catch (e) {
       throw _friendlyError(e.message);
