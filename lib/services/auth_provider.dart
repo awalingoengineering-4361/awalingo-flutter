@@ -2,6 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'auth_service.dart';
 
+// Syncs display name into user_profile so leaderboard and other features
+// can read it without needing access to auth.users.
+Future<void> _syncProfileName(User user) async {
+  final meta = user.userMetadata ?? {};
+  final name = (meta['name'] as String?)?.trim() ??
+      (meta['display_name'] as String?)?.trim() ??
+      (meta['full_name'] as String?)?.trim() ??
+      user.email?.split('@').first ??
+      '';
+  if (name.isEmpty) return;
+  try {
+    await Supabase.instance.client.from('user_profile').upsert(
+      {'userId': user.id, 'name': name},
+      onConflict: 'userId',
+    );
+  } catch (_) {
+    // Non-critical — leaderboard falls back gracefully if this fails
+  }
+}
+
 /// Flutter equivalent of Next.js AuthContext.
 /// Wrap your app with [AuthProvider] then call [AuthProvider.of(context)]
 /// anywhere in the tree.
@@ -48,6 +68,7 @@ class AuthNotifier extends ChangeNotifier {
           event == AuthChangeEvent.initialSession ||
           event == AuthChangeEvent.tokenRefreshed) {
         _user = state.session?.user;
+        if (_user != null) _syncProfileName(_user!);
       } else if (event == AuthChangeEvent.signedOut) {
         _user = null;
       }
