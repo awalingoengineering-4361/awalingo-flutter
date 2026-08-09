@@ -4,33 +4,69 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
 
-// ── Models ─────────────────────────────────────────────────────────────────────
+// ── Stage visual constants ──────────────────────────────────────────────────────
+
+const _kStageNames = ['JJC', 'Sabi Player', 'Shugaba', 'Odogwu', 'Idan', 'Ancestor'];
+
+const _kStageIcons = [
+  Icons.extension_rounded,
+  Icons.psychology_rounded,
+  Icons.lightbulb_rounded,
+  Icons.memory_rounded,
+  Icons.auto_awesome_rounded,
+  Icons.workspace_premium_rounded,
+];
+
+class _StageStyle {
+  final Color cardBg;
+  final Color topBorder;
+  final Color iconBg;
+  final Color iconBorder;
+  final Color accent;
+  final Color buttonBg;
+  const _StageStyle({
+    required this.cardBg, required this.topBorder,
+    required this.iconBg, required this.iconBorder,
+    required this.accent, required this.buttonBg,
+  });
+}
+
+const _kStageStyles = [
+  // 1 JJC – violet
+  _StageStyle(cardBg: Color(0xFFF5F3FF), topBorder: Color(0xFFA78BFA),
+      iconBg: Color(0xFFF5F3FF), iconBorder: Color(0xFFC4B5FD),
+      accent: Color(0xFF7C3AED), buttonBg: Color(0xFF8B5CF6)),
+  // 2 Sabi Player – green
+  _StageStyle(cardBg: Color(0xFFF0FDF4), topBorder: Color(0xFF22C55E),
+      iconBg: Color(0xFFF0FDF4), iconBorder: Color(0xFF86EFAC),
+      accent: Color(0xFF15803D), buttonBg: Color(0xFF16A34A)),
+  // 3 Shugaba – amber
+  _StageStyle(cardBg: Color(0xFFFFFBEB), topBorder: Color(0xFFF59E0B),
+      iconBg: Color(0xFFFFFBEB), iconBorder: Color(0xFFFCD34D),
+      accent: Color(0xFFD97706), buttonBg: Color(0xFFF59E0B)),
+  // 4 Odogwu – cyan
+  _StageStyle(cardBg: Color(0xFFECFEFF), topBorder: Color(0xFF06B6D4),
+      iconBg: Color(0xFFECFEFF), iconBorder: Color(0xFF67E8F9),
+      accent: Color(0xFF0E7490), buttonBg: Color(0xFF0891B2)),
+  // 5 Idan – neutral/dark
+  _StageStyle(cardBg: Color(0xFFFAFAFA), topBorder: Color(0xFF111827),
+      iconBg: Color(0xFFFFFFFF), iconBorder: Color(0xFF9CA3AF),
+      accent: Color(0xFF111827), buttonBg: Color(0xFF111827)),
+  // 6 Ancestor – red
+  _StageStyle(cardBg: Color(0xFFFFF5F5), topBorder: Color(0xFFEF4444),
+      iconBg: Color(0xFFFFF5F5), iconBorder: Color(0xFFFCA5A5),
+      accent: Color(0xFFB91C1C), buttonBg: Color(0xFFB91C1C)),
+];
+
+// ── Domain models ───────────────────────────────────────────────────────────────
 
 enum _Difficulty { beginner, intermediate, advanced }
 
 extension _DifficultyX on _Difficulty {
-  String get label => '${name[0].toUpperCase()}${name.substring(1)}';
   String get dbValue => name.toUpperCase();
-  String get badgeLabel =>
-      const ['Easy', 'Medium', 'Hard'][index];
   int get cowryCost => const [20, 30, 50][index];
   int get secondsPerQuestion => const [30, 25, 20][index];
   int get warningThreshold => this == _Difficulty.advanced ? 5 : 10;
-  Color get accent => const [
-        Color(0xFF10B981),
-        Color(0xFF0EA5E9),
-        Color(0xFFF43F5E),
-      ][index];
-  Color get lightBg => const [
-        Color(0xFFD1FAE5),
-        Color(0xFFE0F2FE),
-        Color(0xFFFFE4E6),
-      ][index];
-  Color get darkBg => const [
-        Color(0xFF064E3B),
-        Color(0xFF0C4A6E),
-        Color(0xFF4C0519),
-      ][index];
 }
 
 _Difficulty? _diffFrom(String s) => switch (s.toUpperCase()) {
@@ -45,12 +81,23 @@ class _QuizLevel {
   final _Difficulty difficulty;
   final int questionCount;
   final int attemptCount;
+  final int stageIndex; // 0-based → maps to name/icon/style
+  final bool isUnlocked;
+
   const _QuizLevel({
     required this.id,
     required this.difficulty,
     required this.questionCount,
     required this.attemptCount,
+    required this.stageIndex,
+    required this.isUnlocked,
   });
+
+  int get _si => stageIndex.clamp(0, 5);
+  _StageStyle get style => _kStageStyles[_si];
+  String get stageName => _kStageNames[_si];
+  IconData get icon => _kStageIcons[_si];
+  int get stageNumber => stageIndex + 1;
 }
 
 class _QuizQuestion {
@@ -59,14 +106,12 @@ class _QuizQuestion {
   final List<({String label, String value})> options;
   final String correctAnswer;
   const _QuizQuestion({
-    required this.id,
-    required this.text,
-    required this.options,
-    required this.correctAnswer,
+    required this.id, required this.text,
+    required this.options, required this.correctAnswer,
   });
 }
 
-// ── Service ────────────────────────────────────────────────────────────────────
+// ── Service ─────────────────────────────────────────────────────────────────────
 
 class _AwaQuizService {
   final _db = Supabase.instance.client;
@@ -87,7 +132,8 @@ class _AwaQuizService {
           .select('setId')
           .eq('userId', userId)
           .inFilter('setId', setIds)
-          .not('submittedAt', 'is', null);
+          .not('submittedAt', 'is', null)
+          .gt('totalQuestions', 0); // early exits don't set totalQuestions
       for (final r in rows) {
         final sid = r['setId'] as int;
         attemptCounts[sid] = (attemptCounts[sid] ?? 0) + 1;
@@ -101,20 +147,32 @@ class _AwaQuizService {
         .maybeSingle();
     final balance = (profile?['cowryBalance'] as int?) ?? 0;
 
-    final levels = setsRows
+    // Sort: difficulty order first, then by id within same difficulty
+    final raw = setsRows
         .map((r) {
           final diff = _diffFrom(r['difficulty'] as String? ?? '');
           if (diff == null) return null;
-          return _QuizLevel(
-            id: r['id'] as int,
-            difficulty: diff,
-            questionCount: (r['questionCount'] as int?) ?? 10,
-            attemptCount: attemptCounts[r['id'] as int] ?? 0,
-          );
+          return (id: r['id'] as int, difficulty: diff, questionCount: (r['questionCount'] as int?) ?? 10);
         })
-        .whereType<_QuizLevel>()
+        .whereType<({int id, _Difficulty difficulty, int questionCount})>()
         .toList()
-      ..sort((a, b) => a.difficulty.index.compareTo(b.difficulty.index));
+      ..sort((a, b) {
+        final dc = a.difficulty.index.compareTo(b.difficulty.index);
+        return dc != 0 ? dc : a.id.compareTo(b.id);
+      });
+
+    final levels = raw.asMap().entries.map((e) {
+      final idx = e.key;
+      final r = e.value;
+      return _QuizLevel(
+        id: r.id,
+        difficulty: r.difficulty,
+        questionCount: r.questionCount,
+        attemptCount: attemptCounts[r.id] ?? 0,
+        stageIndex: idx,
+        isUnlocked: idx == 0 || (attemptCounts[raw[idx - 1].id] ?? 0) > 0,
+      );
+    }).toList();
 
     return (levels: levels, cowryBalance: balance);
   }
@@ -130,10 +188,7 @@ class _AwaQuizService {
     final seen = <String>{};
     final questions = <_QuizQuestion>[];
     for (final row in rows) {
-      final norm = (row['text'] as String)
-          .trim()
-          .toLowerCase()
-          .replaceAll(RegExp(r'\s+'), ' ');
+      final norm = (row['text'] as String).trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
       if (seen.contains(norm)) continue;
       seen.add(norm);
       final opts = (row['options'] as List<dynamic>).map((o) {
@@ -152,25 +207,14 @@ class _AwaQuizService {
   }
 
   Future<int> startAttempt({
-    required String userId,
-    required int languageId,
-    required int setId,
-    required _Difficulty difficulty,
-    required int currentBalance,
-    required int cowryCost,
+    required String userId, required int languageId, required int setId,
+    required _Difficulty difficulty, required int currentBalance, required int cowryCost,
   }) async {
-    // Deduct cowries
-    await _db
-        .from('user_profile')
+    await _db.from('user_profile')
         .update({'cowryBalance': currentBalance - cowryCost}).eq('userId', userId);
-    // Create attempt
     final result = await _db.from('community_quiz_attempts').insert({
-      'userId': userId,
-      'languageId': languageId,
-      'setId': setId,
-      'difficulty': difficulty.dbValue,
-      'score': 0,
-      'totalQuestions': 0,
+      'userId': userId, 'languageId': languageId, 'setId': setId,
+      'difficulty': difficulty.dbValue, 'score': 0, 'totalQuestions': 0,
       'entryCostCowries': cowryCost,
     }).select('id').single();
     return result['id'] as int;
@@ -178,8 +222,7 @@ class _AwaQuizService {
 
   Future<void> submitAttempt(int attemptId, int score, int total) async {
     await _db.from('community_quiz_attempts').update({
-      'score': score,
-      'totalQuestions': total,
+      'score': score, 'totalQuestions': total,
       'submittedAt': DateTime.now().toUtc().toIso8601String(),
     }).eq('id', attemptId);
   }
@@ -191,16 +234,12 @@ class _AwaQuizService {
   }
 }
 
-// ── Level Picker Screen ────────────────────────────────────────────────────────
+// ── Level Picker Screen ─────────────────────────────────────────────────────────
 
 class AwaQuizScreen extends StatefulWidget {
   final int languageId;
   final String communityName;
-  const AwaQuizScreen({
-    super.key,
-    required this.languageId,
-    required this.communityName,
-  });
+  const AwaQuizScreen({super.key, required this.languageId, required this.communityName});
 
   @override
   State<AwaQuizScreen> createState() => _AwaQuizScreenState();
@@ -216,7 +255,6 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
   @override
   void initState() {
     super.initState();
-    // Defer until after first frame so InheritedWidget lookups are safe
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
@@ -225,10 +263,7 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
     setState(() { _loading = true; _error = null; });
     try {
       final userId = AuthProvider.of(context).user?.id;
-      if (userId == null) {
-        if (mounted) setState(() => _loading = false);
-        return;
-      }
+      if (userId == null) { if (mounted) setState(() => _loading = false); return; }
       final data = await _service.loadLevels(userId, widget.languageId);
       if (mounted) setState(() { _levels = data.levels; _cowryBalance = data.cowryBalance; _loading = false; });
     } catch (e) {
@@ -237,12 +272,14 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
   }
 
   void _onLevelTap(_QuizLevel level) {
+    if (!level.isUnlocked) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _StartModal(
         level: level,
+        communityName: widget.communityName,
         cowryBalance: _cowryBalance,
         onStart: () => _startQuiz(level),
       ),
@@ -253,73 +290,57 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
     if (_cowryBalance < level.difficulty.cowryCost) return;
     final userId = AuthProvider.of(context).user?.id;
     if (userId == null) return;
-
     try {
-      // Load questions first
       final questions = await _service.loadQuestions(level.id, level.questionCount);
       if (questions.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No questions available for this level yet.')),
-          );
+            const SnackBar(content: Text('No questions available for this level yet.')));
         }
         return;
       }
-
-      // Create the attempt (deducts cowries)
       final attemptId = await _service.startAttempt(
-        userId: userId,
-        languageId: widget.languageId,
-        setId: level.id,
-        difficulty: level.difficulty,
-        currentBalance: _cowryBalance,
+        userId: userId, languageId: widget.languageId, setId: level.id,
+        difficulty: level.difficulty, currentBalance: _cowryBalance,
         cowryCost: level.difficulty.cowryCost,
       );
-
       if (!mounted) return;
-
-      // Navigate to quiz screen
-      await Navigator.of(context).push(MaterialPageRoute(
+      // rootNavigator: true so the quiz covers the full screen above the shell
+      // (top/bottom nav hidden during active quiz).
+      await Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(
         builder: (_) => _QuizScreen(
-          questions: questions,
-          difficulty: level.difficulty,
+          questions: questions, level: level,
           communityName: widget.communityName,
-          attemptId: attemptId,
-          service: _service,
+          attemptId: attemptId, service: _service,
         ),
       ));
-
-      // Refresh balance after quiz
       _load();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to start quiz: $e')),
-        );
+          SnackBar(content: Text('Failed to start quiz: $e')));
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final c = AppColorScheme.of(context);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Scaffold(
-      backgroundColor: c.background,
-      // Minimal back-navigation bar — no title, matches Next.js which has no
-      // explicit page-level header (the content card IS the header).
-      appBar: AppBar(
-        backgroundColor: c.background,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: c.foreground),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
+    // No Scaffold — rendered inside AppShell's nested Navigator so the top
+    // AppBar and bottom nav remain visible.
+    return ColoredBox(
+      color: const Color(0xFFF3F4F6),
+      child: _loading
+          ? Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                ),
+                child: const Text('Loading quiz...', style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, color: Color(0xFF6B7280))),
+              ),
+            )
           : _error != null
               ? _ErrorState(message: _error!, onRetry: _load)
               : RefreshIndicator(
@@ -327,90 +348,56 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
                   child: ListView(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
                     children: [
-                      // ── Header card — matches Next.js rounded-3xl white card ──
+                      // Header card
                       Container(
                         width: double.infinity,
                         decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+                          color: Colors.white,
                           borderRadius: BorderRadius.circular(24),
-                          border: Border.all(
-                            color: isDark
-                                ? const Color(0xFF2C2C2E)
-                                : const Color(0xFFF3F4F6),
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.05),
-                              blurRadius: 16,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
+                          border: Border.all(color: const Color(0xFFF3F4F6)),
+                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 16, offset: const Offset(0, 2))],
                         ),
                         padding: const EdgeInsets.all(24),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // "COMMUNITY QUIZ" label — uppercase, tracked, primary
                             Text(
                               'COMMUNITY QUIZ',
-                              style: TextStyle(
-                                fontFamily: 'Metropolis',
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 1.4,
-                                color: c.primary,
-                              ),
+                              style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 1.4, color: AppColorScheme.of(context).primary),
                             ),
                             const SizedBox(height: 8),
-                            // "AwaQuiz Yoruba" title
                             Text(
                               'AwaQuiz ${widget.communityName}',
-                              style: TextStyle(
-                                fontFamily: 'Parkinsans',
-                                fontSize: 28,
-                                fontWeight: FontWeight.w700,
-                                color: isDark
-                                    ? Colors.white
-                                    : const Color(0xFF0A0A0A),
-                              ),
+                              style: const TextStyle(fontFamily: 'Parkinsans', fontSize: 28, fontWeight: FontWeight.w600, color: Color(0xFF0A0A0A)),
                             ),
                             const SizedBox(height: 12),
-                            // Subtitle
-                            Text(
+                            const Text(
                               'Pick a level, answer a fresh set of questions, and see how far your community language skills can go.',
-                              style: TextStyle(
-                                fontFamily: 'Metropolis',
-                                fontSize: 14,
-                                height: 1.5,
-                                color: isDark
-                                    ? const Color(0xFF9CA3AF)
-                                    : const Color(0xFF4B5563),
-                              ),
+                              style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, height: 1.5, color: Color(0xFF4B5563)),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 16),
 
-                      // ── Level cards ───────────────────────────────────────────
                       if (_levels.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 32),
-                          child: Text(
+                        Container(
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFFBEB),
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(color: const Color(0xFFFCD34D)),
+                          ),
+                          child: const Text(
                             'No quiz levels available for this community yet.',
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: c.mutedForeground, fontSize: 15),
+                            style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: Color(0xFF92400E)),
                           ),
                         )
                       else
                         ..._levels.map((level) => Padding(
                               padding: const EdgeInsets.only(bottom: 12),
-                              child: _LevelCard(
-                                level: level,
-                                cowryBalance: _cowryBalance,
-                                isDark: isDark,
-                                onTap: () => _onLevelTap(level),
-                              ),
+                              child: _LevelCard(level: level, cowryBalance: _cowryBalance, onTap: () => _onLevelTap(level)),
                             )),
                     ],
                   ),
@@ -419,159 +406,129 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
   }
 }
 
-// ── Level Card ─────────────────────────────────────────────────────────────────
+// ── Level Card ──────────────────────────────────────────────────────────────────
 
 class _LevelCard extends StatelessWidget {
   final _QuizLevel level;
   final int cowryBalance;
-  final bool isDark;
   final VoidCallback onTap;
-
-  const _LevelCard({
-    required this.level,
-    required this.cowryBalance,
-    required this.isDark,
-    required this.onTap,
-  });
+  const _LevelCard({required this.level, required this.cowryBalance, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final diff = level.difficulty;
-    final canAfford = cowryBalance >= diff.cowryCost;
-    final bg = isDark ? diff.darkBg : diff.lightBg;
+    final st = level.style;
+    final locked = !level.isUnlocked;
+    final canAfford = cowryBalance >= level.difficulty.cowryCost;
 
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: diff.accent.withValues(alpha: 0.4)),
-        ),
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.psychology_rounded, color: diff.accent, size: 28),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    diff.label,
-                    style: TextStyle(
-                      fontFamily: 'Parkinsans',
-                      fontWeight: FontWeight.w700,
-                      fontSize: 18,
-                      color: diff.accent,
+    // Flutter can't combine borderRadius with a non-uniform Border (different
+    // colors per side) in one BoxDecoration. Fix: outer DecoratedBox carries
+    // the shadow + radius; ClipRRect rounds the child; a 2-px colored strip
+    // inside the Column acts as the accent top border.
+    return Opacity(
+      opacity: locked ? 0.7 : 1.0,
+      child: GestureDetector(
+        onTap: locked ? null : onTap,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2))],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: st.cardBg,
+                border: Border.all(color: const Color(0xFFE5E7EB)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 2-px accent top strip
+                  Container(height: 2, color: st.topBorder),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: st.iconBg,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: st.iconBorder),
+                              ),
+                              child: Icon(level.icon, size: 20, color: st.accent),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Stage ${level.stageNumber}',
+                                      style: TextStyle(fontFamily: 'Metropolis', fontSize: 11, fontWeight: FontWeight.w500, color: st.accent)),
+                                  const SizedBox(height: 2),
+                                  Text(level.stageName,
+                                      style: TextStyle(fontFamily: 'Parkinsans', fontSize: 18, fontWeight: FontWeight.w700, color: st.accent)),
+                                ],
+                              ),
+                            ),
+                            if (locked)
+                              const Padding(
+                                padding: EdgeInsets.only(top: 2),
+                                child: Icon(Icons.lock_rounded, size: 16, color: Color(0xFF9CA3AF)),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          '${level.questionCount} questions · ${level.difficulty.cowryCost} cowries · ${level.difficulty.secondsPerQuestion}s / question',
+                          style: const TextStyle(fontFamily: 'Metropolis', fontSize: 12, color: Color(0xFF6B7280)),
+                        ),
+                        if (level.attemptCount > 0) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            '${level.attemptCount} attempt${level.attemptCount == 1 ? '' : 's'}',
+                            style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, fontWeight: FontWeight.w500, color: st.accent),
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+                        ElevatedButton.icon(
+                          onPressed: locked ? null : onTap,
+                          icon: Icon(locked ? Icons.lock_rounded : Icons.rocket_launch_rounded, size: 14),
+                          label: Text(locked ? 'Locked' : (canAfford ? 'Start Level' : 'Not enough cowries')),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: locked ? const Color(0xFFE5E7EB) : st.buttonBg,
+                            foregroundColor: locked ? const Color(0xFF9CA3AF) : Colors.white,
+                            textStyle: const TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600, fontSize: 13),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            shape: const StadiumBorder(),
+                            elevation: 0,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: diff.accent.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(100),
-                  ),
-                  child: Text(
-                    diff.badgeLabel,
-                    style: TextStyle(
-                      fontFamily: 'Metropolis',
-                      fontWeight: FontWeight.w600,
-                      fontSize: 11,
-                      color: diff.accent,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 16,
-              runSpacing: 6,
-              children: [
-                _InfoChip(icon: Icons.quiz_outlined, label: '${level.questionCount} questions'),
-                _InfoChip(icon: Icons.timer_outlined, label: '${diff.secondsPerQuestion}s / question'),
-                _InfoChip(icon: null, label: '🐚 ${diff.cowryCost} cowries'),
-              ],
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: onTap,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: diff.accent,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  elevation: 0,
-                ),
-                child: Text(
-                  canAfford ? 'Start Level' : 'Not enough cowries',
-                  style: const TextStyle(
-                    fontFamily: 'Metropolis',
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
+                ],
               ),
             ),
-            if (level.attemptCount > 0) ...[
-              const SizedBox(height: 8),
-              Text(
-                '${level.attemptCount} attempt${level.attemptCount == 1 ? '' : 's'} taken',
-                style: TextStyle(
-                  fontFamily: 'Metropolis',
-                  fontSize: 12,
-                  color: diff.accent.withValues(alpha: 0.8),
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _InfoChip extends StatelessWidget {
-  final IconData? icon;
-  final String label;
-  const _InfoChip({this.icon, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (icon != null) ...[
-          Icon(icon, size: 13, color: const Color(0xFF6B7280)),
-          const SizedBox(width: 4),
-        ],
-        Text(
-          label,
-          style: const TextStyle(
-            fontFamily: 'Metropolis',
-            fontSize: 13,
-            color: Color(0xFF6B7280),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ── Start Modal ────────────────────────────────────────────────────────────────
+// ── Start Modal ─────────────────────────────────────────────────────────────────
 
 class _StartModal extends StatefulWidget {
   final _QuizLevel level;
+  final String communityName;
   final int cowryBalance;
   final VoidCallback onStart;
-  const _StartModal({required this.level, required this.cowryBalance, required this.onStart});
+  const _StartModal({required this.level, required this.communityName, required this.cowryBalance, required this.onStart});
 
   @override
   State<_StartModal> createState() => _StartModalState();
@@ -583,45 +540,53 @@ class _StartModalState extends State<_StartModal> {
 
   @override
   Widget build(BuildContext context) {
-    final diff = widget.level.difficulty;
+    final level = widget.level;
+    final st = level.style;
+    final diff = level.difficulty;
     final canAfford = widget.cowryBalance >= diff.cowryCost;
 
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      padding: EdgeInsets.fromLTRB(
-          24, 20, 24, MediaQuery.of(context).viewInsets.bottom + 32),
+      padding: EdgeInsets.fromLTRB(24, 16, 24, MediaQuery.of(context).viewInsets.bottom + 32),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Handle
           Center(
             child: Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(
-                color: const Color(0xFFE5E7EB),
-                borderRadius: BorderRadius.circular(2),
-              ),
+              width: 36, height: 4,
+              margin: const EdgeInsets.only(bottom: 20),
+              decoration: BoxDecoration(color: const Color(0xFFE5E7EB), borderRadius: BorderRadius.circular(2)),
             ),
+          ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Stage ${level.stageNumber}',
+                        style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, fontWeight: FontWeight.w500, color: st.accent)),
+                    const SizedBox(height: 4),
+                    Text('Ready for ${level.stageName}?',
+                        style: const TextStyle(fontFamily: 'Parkinsans', fontSize: 22, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: st.iconBg, borderRadius: BorderRadius.circular(16), border: Border.all(color: st.iconBorder)),
+                child: Icon(level.icon, size: 24, color: st.accent),
+              ),
+            ],
           ),
           const SizedBox(height: 20),
-          Text(
-            '${diff.label} Quiz',
-            style: const TextStyle(
-              fontFamily: 'Parkinsans',
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF111827),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // 2×2 info grid
           Row(children: [
-            Expanded(child: _GridTile(label: 'Questions', value: '${widget.level.questionCount}')),
+            Expanded(child: _GridTile(label: 'Questions', value: '${level.questionCount}')),
             const SizedBox(width: 10),
             Expanded(child: _GridTile(label: 'Entry fee', value: '🐚 ${diff.cowryCost}')),
           ]),
@@ -629,59 +594,60 @@ class _StartModalState extends State<_StartModal> {
           Row(children: [
             Expanded(child: _GridTile(label: 'Your balance', value: '🐚 ${widget.cowryBalance}')),
             const SizedBox(width: 10),
-            Expanded(child: _GridTile(label: 'Time / question', value: '${diff.secondsPerQuestion}s')),
+            Expanded(child: _GridTile(label: 'Duration', value: '${diff.secondsPerQuestion}s / question')),
           ]),
-
+          const SizedBox(height: 16),
           if (!canAfford) ...[
-            const SizedBox(height: 12),
             Container(
-              padding: const EdgeInsets.all(12),
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: const Color(0xFFFEF3C7),
-                borderRadius: BorderRadius.circular(12),
+                color: const Color(0xFFFFFBEB),
+                borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: const Color(0xFFFCD34D)),
               ),
-              child: Row(children: [
-                const Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 16),
-                const SizedBox(width: 8),
-                const Expanded(child: Text(
-                  'You don\'t have enough cowries for this level.',
-                  style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: Color(0xFF92400E)),
-                )),
+              child: const Row(children: [
+                Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 16),
+                SizedBox(width: 8),
+                Expanded(child: Text('You don\'t have enough cowries for this level.',
+                    style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: Color(0xFF92400E)))),
               ]),
             ),
           ],
-
+          const Text(
+            'Cowries are deducted as soon as you start. If you exit after the quiz begins, the session ends and the fee is still used.',
+            style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, height: 1.5, color: Color(0xFF6B7280)),
+          ),
           const SizedBox(height: 16),
-
-          // Rules checkbox
           GestureDetector(
             onTap: () => setState(() => _agreed = !_agreed),
-            child: Row(children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                width: 20, height: 20,
-                decoration: BoxDecoration(
-                  color: _agreed ? diff.accent : Colors.transparent,
-                  border: Border.all(color: _agreed ? diff.accent : const Color(0xFFD1D5DB), width: 2),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: _agreed
-                    ? const Icon(Icons.check, color: Colors.white, size: 14)
-                    : null,
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF9FAFB),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE5E7EB)),
               ),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Text(
-                  'I have read the rules and understand cowries will be deducted immediately.',
-                  style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: Color(0xFF374151)),
+              child: Row(children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  width: 20, height: 20,
+                  decoration: BoxDecoration(
+                    color: _agreed ? st.accent : Colors.transparent,
+                    border: Border.all(color: _agreed ? st.accent : const Color(0xFFD1D5DB), width: 2),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: _agreed ? const Icon(Icons.check, color: Colors.white, size: 14) : null,
                 ),
-              ),
-            ]),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text('I have read the rules and understand cowries will be deducted immediately.',
+                      style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: Color(0xFF374151))),
+                ),
+              ]),
+            ),
           ),
-
           const SizedBox(height: 20),
-
           Row(children: [
             Expanded(
               child: OutlinedButton(
@@ -703,16 +669,17 @@ class _StartModalState extends State<_StartModal> {
                   widget.onStart();
                 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: diff.accent,
+                  backgroundColor: st.buttonBg,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 13),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   elevation: 0,
                   disabledBackgroundColor: const Color(0xFFE5E7EB),
+                  disabledForegroundColor: const Color(0xFF9CA3AF),
                 ),
                 child: _starting
                     ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Text('Start Quiz', style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600)),
+                    : const Text('Start quiz', style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600)),
               ),
             ),
           ]),
@@ -733,7 +700,7 @@ class _GridTile extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: const Color(0xFFF9FAFB),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFFE5E7EB)),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -745,22 +712,17 @@ class _GridTile extends StatelessWidget {
   }
 }
 
-// ── Active Quiz Screen ─────────────────────────────────────────────────────────
+// ── Active Quiz Screen ──────────────────────────────────────────────────────────
+
+String _fmt(int s) => '${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
 
 class _QuizScreen extends StatefulWidget {
   final List<_QuizQuestion> questions;
-  final _Difficulty difficulty;
+  final _QuizLevel level;
   final String communityName;
   final int attemptId;
   final _AwaQuizService service;
-
-  const _QuizScreen({
-    required this.questions,
-    required this.difficulty,
-    required this.communityName,
-    required this.attemptId,
-    required this.service,
-  });
+  const _QuizScreen({required this.questions, required this.level, required this.communityName, required this.attemptId, required this.service});
 
   @override
   State<_QuizScreen> createState() => _QuizScreenState();
@@ -768,16 +730,17 @@ class _QuizScreen extends StatefulWidget {
 
 class _QuizScreenState extends State<_QuizScreen> {
   int _currentIndex = 0;
-  final List<String?> _answers = [];
+  late final List<String?> _answers;
   late int _secondsLeft;
   Timer? _timer;
   bool _submitting = false;
+  bool _showExitDialog = false;
 
   @override
   void initState() {
     super.initState();
-    _answers.addAll(List.filled(widget.questions.length, null));
-    _resetTimer();
+    _answers = List.filled(widget.questions.length, null);
+    _startTimer();
   }
 
   @override
@@ -786,9 +749,9 @@ class _QuizScreenState extends State<_QuizScreen> {
     super.dispose();
   }
 
-  void _resetTimer() {
+  void _startTimer() {
     _timer?.cancel();
-    _secondsLeft = widget.difficulty.secondsPerQuestion;
+    _secondsLeft = widget.level.difficulty.secondsPerQuestion;
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       setState(() => _secondsLeft--);
@@ -800,21 +763,16 @@ class _QuizScreenState extends State<_QuizScreen> {
     _timer?.cancel();
     if (_currentIndex < widget.questions.length - 1) {
       setState(() => _currentIndex++);
-      _resetTimer();
+      _startTimer();
     } else {
       _submit();
     }
   }
 
-  void _selectAnswer(String value) {
-    _timer?.cancel();
-    setState(() => _answers[_currentIndex] = value);
-  }
-
   void _next() {
     if (_currentIndex < widget.questions.length - 1) {
       setState(() => _currentIndex++);
-      _resetTimer();
+      _startTimer();
     } else {
       _submit();
     }
@@ -824,67 +782,41 @@ class _QuizScreenState extends State<_QuizScreen> {
     _timer?.cancel();
     if (_submitting) return;
     setState(() => _submitting = true);
-    final score = _answers
-        .asMap()
-        .entries
-        .where((e) => e.value == widget.questions[e.key].correctAnswer)
-        .length;
-    try {
-      await widget.service.submitAttempt(widget.attemptId, score, widget.questions.length);
-    } catch (_) {}
+    final score = _answers.asMap().entries
+        .where((e) => e.value == widget.questions[e.key].correctAnswer).length;
+    try { await widget.service.submitAttempt(widget.attemptId, score, widget.questions.length); } catch (_) {}
     if (!mounted) return;
-
-    // Build missed list
     final missed = _answers.asMap().entries
         .where((e) => e.value != widget.questions[e.key].correctAnswer)
-        .map((e) => (
-              question: widget.questions[e.key],
-              selectedAnswer: e.value,
-            ))
+        .map((e) => (question: widget.questions[e.key], selectedAnswer: e.value))
         .toList();
-
     Navigator.of(context).pushReplacement(MaterialPageRoute(
       builder: (_) => _ResultScreen(
-        score: score,
-        total: widget.questions.length,
-        difficulty: widget.difficulty,
-        communityName: widget.communityName,
-        missed: missed,
+        score: score, total: widget.questions.length,
+        level: widget.level, communityName: widget.communityName, missed: missed,
       ),
     ));
   }
 
-  Future<void> _confirmExit() async {
-    final exit = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('End the quiz?', style: TextStyle(fontFamily: 'Parkinsans', fontWeight: FontWeight.w700)),
-        content: const Text(
-          'Your cowries won\'t be refunded if you exit now.',
-          style: TextStyle(fontFamily: 'Metropolis'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Keep going'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('End quiz', style: TextStyle(color: Color(0xFFF43F5E))),
-          ),
-        ],
-      ),
-    );
-    if (exit == true && mounted) {
-      _timer?.cancel();
-      try { await widget.service.exitAttempt(widget.attemptId); } catch (_) {}
-      if (mounted) Navigator.of(context).pop();
-    }
+  void _openExitDialog() {
+    _timer?.cancel();
+    setState(() => _showExitDialog = true);
+  }
+
+  void _closeExitDialog() {
+    setState(() => _showExitDialog = false);
+    _startTimer();
+  }
+
+  Future<void> _doExit() async {
+    try { await widget.service.exitAttempt(widget.attemptId); } catch (_) {}
+    if (mounted) Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
-    final diff = widget.difficulty;
+    final diff = widget.level.difficulty;
+    final st = widget.level.style;
     final question = widget.questions[_currentIndex];
     final isLast = _currentIndex == widget.questions.length - 1;
     final inWarning = _secondsLeft <= diff.warningThreshold;
@@ -892,240 +824,248 @@ class _QuizScreenState extends State<_QuizScreen> {
 
     if (_submitting) {
       return Scaffold(
-        backgroundColor: const Color(0xFFF9FAFB),
-        body: const Center(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Submitting quiz...', style: TextStyle(fontFamily: 'Metropolis', fontSize: 15)),
-          ]),
+        backgroundColor: const Color(0xFFF3F4F6),
+        body: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), border: Border.all(color: const Color(0xFFE5E7EB))),
+            child: const Text('Submitting quiz...', style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, color: Color(0xFF6B7280))),
+          ),
         ),
       );
     }
 
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (didPop, _) async {
-        if (!didPop) _confirmExit();
-      },
+      onPopInvokedWithResult: (didPop, _) { if (!didPop) _openExitDialog(); },
       child: Scaffold(
-        backgroundColor: const Color(0xFFF9FAFB),
-        body: SafeArea(
-          child: Column(children: [
-            // Header
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: Row(children: [
-                GestureDetector(
-                  onTap: _confirmExit,
-                  child: Container(
-                    width: 36, height: 36,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFE5E7EB)),
-                    ),
-                    child: const Icon(Icons.close, size: 18, color: Color(0xFF374151)),
-                  ),
-                ),
-                const Spacer(),
-                // Timer badge
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: inWarning ? const Color(0xFFFFF1F2) : const Color(0xFFF3F4F6),
-                    borderRadius: BorderRadius.circular(100),
-                    border: Border.all(
-                      color: inWarning ? const Color(0xFFFDA4AF) : const Color(0xFFE5E7EB),
-                    ),
-                  ),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.timer_outlined,
-                        size: 15,
-                        color: inWarning ? const Color(0xFFF43F5E) : const Color(0xFF6B7280)),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${_secondsLeft}s',
-                      style: TextStyle(
-                        fontFamily: 'Metropolis',
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                        color: inWarning ? const Color(0xFFF43F5E) : const Color(0xFF374151),
+        backgroundColor: const Color(0xFFF3F4F6),
+        body: Stack(children: [
+          SafeArea(
+            child: Column(children: [
+              // Top bar
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: Row(children: [
+                  GestureDetector(
+                    onTap: _openExitDialog,
+                    child: Container(
+                      width: 40, height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.white, shape: BoxShape.circle,
+                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4)],
                       ),
-                    ),
-                  ]),
-                ),
-              ]),
-            ),
-
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  // Title + progress
-                  Text(
-                    'AwaQuiz ${widget.communityName} · ${diff.label}',
-                    style: const TextStyle(
-                      fontFamily: 'Metropolis', fontWeight: FontWeight.w600, fontSize: 13, color: Color(0xFF6B7280)),
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Progress bar
-                  Row(children: [
-                    Expanded(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: LinearProgressIndicator(
-                          value: (_currentIndex + 1) / widget.questions.length,
-                          backgroundColor: const Color(0xFFE5E7EB),
-                          valueColor: AlwaysStoppedAnimation(diff.accent),
-                          minHeight: 6,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      '${_currentIndex + 1} / ${widget.questions.length}',
-                      style: const TextStyle(fontFamily: 'Metropolis', fontSize: 12, color: Color(0xFF9CA3AF)),
-                    ),
-                  ]),
-                  const SizedBox(height: 20),
-
-                  // Question text
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0xFFE5E7EB)),
-                    ),
-                    child: Text(
-                      question.text,
-                      style: const TextStyle(
-                        fontFamily: 'Metropolis', fontWeight: FontWeight.w600, fontSize: 15, color: Color(0xFF111827)),
+                      child: const Icon(Icons.close, size: 18, color: Color(0xFF111827)),
                     ),
                   ),
-                  const SizedBox(height: 16),
-
-                  // Answer options
-                  ...question.options.map((opt) {
-                    final isSelected = selectedAnswer == opt.value;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: GestureDetector(
-                        onTap: () => _selectAnswer(opt.value),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 150),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? diff.accent.withValues(alpha: 0.08)
-                                : Colors.white,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: isSelected ? diff.accent : const Color(0xFFE5E7EB),
-                              width: isSelected ? 2 : 1,
-                            ),
-                          ),
-                          child: Row(children: [
-                            AnimatedContainer(
-                              duration: const Duration(milliseconds: 150),
-                              width: 28, height: 28,
-                              decoration: BoxDecoration(
-                                color: isSelected ? diff.accent : const Color(0xFFF3F4F6),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  opt.label,
-                                  style: TextStyle(
-                                    fontFamily: 'Metropolis',
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 13,
-                                    color: isSelected ? Colors.white : const Color(0xFF6B7280),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                opt.value,
-                                style: TextStyle(
-                                  fontFamily: 'Metropolis',
-                                  fontSize: 14,
-                                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                                  color: isSelected ? diff.accent : const Color(0xFF374151),
-                                ),
-                              ),
-                            ),
-                          ]),
-                        ),
-                      ),
-                    );
-                  }),
                 ]),
               ),
-            ),
 
-            // Footer buttons
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Row(children: [
-                OutlinedButton(
-                  onPressed: _confirmExit,
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    side: const BorderSide(color: Color(0xFFE5E7EB)),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(28),
+                      border: Border.all(color: const Color(0xFFE5E7EB)),
+                    ),
+                    padding: const EdgeInsets.all(24),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      // Header: logo + timer + counter
+                      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Expanded(
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Image.asset('assets/branding/logo-wordmark-light.png', height: 28,
+                                errorBuilder: (_, e, st) => const Text('AwaQuiz',
+                                    style: TextStyle(fontFamily: 'Parkinsans', fontSize: 20, fontWeight: FontWeight.w700, color: Color(0xFF111827)))),
+                            const SizedBox(height: 4),
+                            Text('${widget.communityName} · ${widget.level.stageName}',
+                                style: const TextStyle(fontFamily: 'Metropolis', fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF6B7280))),
+                          ]),
+                        ),
+                        const SizedBox(width: 12),
+                        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 300),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: inWarning ? const Color(0xFFFFF1F2) : Colors.white,
+                              borderRadius: BorderRadius.circular(100),
+                              border: Border.all(color: inWarning ? const Color(0xFFFDA4AF) : const Color(0xFFE5E7EB)),
+                            ),
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              Icon(Icons.access_time_rounded, size: 15,
+                                  color: inWarning ? const Color(0xFFE11D48) : const Color(0xFF6B7280)),
+                              const SizedBox(width: 5),
+                              Text(_fmt(_secondsLeft.clamp(0, 9999)),
+                                  style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w700, fontSize: 16,
+                                      color: inWarning ? const Color(0xFFE11D48) : const Color(0xFF374151))),
+                            ]),
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(16)),
+                            child: Text('${_currentIndex + 1} / ${widget.questions.length}',
+                                style: const TextStyle(fontFamily: 'Metropolis', fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF374151))),
+                          ),
+                        ]),
+                      ]),
+                      const SizedBox(height: 28),
+
+                      // Question box
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(color: const Color(0xFFF9FAFB), borderRadius: BorderRadius.circular(24)),
+                        child: Text(question.text,
+                            style: const TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w500, fontSize: 16, height: 1.5, color: Color(0xFF0A0A0A))),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Answer options
+                      ...question.options.map((opt) {
+                        final isSelected = selectedAnswer == opt.value;
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: GestureDetector(
+                            onTap: () => setState(() => _answers[_currentIndex] = opt.value),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                              decoration: BoxDecoration(
+                                color: isSelected ? st.accent.withValues(alpha: 0.06) : Colors.white,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: isSelected ? st.accent : const Color(0xFFE5E7EB), width: isSelected ? 2 : 1),
+                              ),
+                              child: Row(children: [
+                                Text('${opt.label}.',
+                                    style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w700, fontSize: 14,
+                                        color: isSelected ? st.accent : const Color(0xFF374151))),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(opt.value,
+                                      style: TextStyle(fontFamily: 'Metropolis', fontSize: 14,
+                                          color: isSelected ? st.accent : const Color(0xFF374151))),
+                                ),
+                              ]),
+                            ),
+                          ),
+                        );
+                      }),
+                    ]),
                   ),
-                  child: const Text('Exit', style: TextStyle(fontFamily: 'Metropolis', color: Color(0xFF374151))),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: selectedAnswer != null ? _next : null,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: diff.accent,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 13),
+              ),
+
+              // Footer
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                child: Row(children: [
+                  OutlinedButton(
+                    onPressed: _openExitDialog,
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 13),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      elevation: 0,
-                      disabledBackgroundColor: const Color(0xFFE5E7EB),
+                      side: const BorderSide(color: Color(0xFFE5E7EB)),
                     ),
-                    child: Text(
-                      isLast ? 'Submit Quiz' : 'Next Question',
-                      style: const TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600),
+                    child: const Text('Exit', style: TextStyle(fontFamily: 'Metropolis', color: Color(0xFF374151))),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: selectedAnswer != null ? _next : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: st.buttonBg,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
+                        disabledBackgroundColor: const Color(0xFFE5E7EB),
+                        disabledForegroundColor: const Color(0xFF9CA3AF),
+                      ),
+                      child: Text(isLast ? 'Submit quiz' : 'Next question',
+                          style: const TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                ]),
+              ),
+            ]),
+          ),
+
+          // Exit confirmation overlay
+          if (_showExitDialog)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.5),
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Container(
+                      constraints: const BoxConstraints(maxWidth: 380),
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                      ),
+                      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        const Text('End the quiz?',
+                            style: TextStyle(fontFamily: 'Parkinsans', fontSize: 20, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+                        const SizedBox(height: 8),
+                        const Text('Leaving now will end this quiz session. Your progress will be lost.',
+                            style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, height: 1.5, color: Color(0xFF6B7280))),
+                        const SizedBox(height: 20),
+                        Row(children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: _closeExitDialog,
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 13),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                side: const BorderSide(color: Color(0xFFE5E7EB)),
+                              ),
+                              child: const Text('Keep going', style: TextStyle(fontFamily: 'Metropolis', color: Color(0xFF374151))),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: _doExit,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFE11D48),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 13),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                elevation: 0,
+                              ),
+                              child: const Text('End quiz', style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                        ]),
+                      ]),
                     ),
                   ),
                 ),
-              ]),
+              ),
             ),
-          ]),
-        ),
+        ]),
       ),
     );
   }
 }
 
-// ── Result Screen ──────────────────────────────────────────────────────────────
+// ── Result Screen ───────────────────────────────────────────────────────────────
 
 class _ResultScreen extends StatefulWidget {
   final int score;
   final int total;
-  final _Difficulty difficulty;
+  final _QuizLevel level;
   final String communityName;
   final List<({_QuizQuestion question, String? selectedAnswer})> missed;
-
-  const _ResultScreen({
-    required this.score,
-    required this.total,
-    required this.difficulty,
-    required this.communityName,
-    required this.missed,
-  });
+  const _ResultScreen({required this.score, required this.total, required this.level, required this.communityName, required this.missed});
 
   @override
   State<_ResultScreen> createState() => _ResultScreenState();
@@ -1134,206 +1074,196 @@ class _ResultScreen extends StatefulWidget {
 class _ResultScreenState extends State<_ResultScreen> {
   bool _showMissed = false;
 
-  int get _percentage => widget.total > 0
-      ? ((widget.score / widget.total) * 100).round()
-      : 0;
-  bool get _isPerfect => widget.score == widget.total;
+  int get _pct => widget.total > 0 ? ((widget.score / widget.total) * 100).round() : 0;
+  bool get _isPerfect => widget.score == widget.total && widget.total > 0;
 
   @override
   Widget build(BuildContext context) {
-    final diff = widget.difficulty;
+    final st = widget.level.style;
+    final meta = AuthProvider.of(context).user;
+    final userName = (meta?.userMetadata?['name'] as String?)?.trim()
+        ?? (meta?.userMetadata?['full_name'] as String?)?.trim()
+        ?? meta?.email?.split('@').first
+        ?? 'You';
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF9FAFB),
+      backgroundColor: const Color(0xFFF3F4F6),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
+          padding: const EdgeInsets.fromLTRB(16, 24, 16, 40),
           child: Column(children: [
-            // Trophy
+            // Score card
             Container(
-              width: 72, height: 72,
+              width: double.infinity,
+              padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: diff.accent.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(color: const Color(0xFFE5E7EB)),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 12, offset: const Offset(0, 4))],
               ),
-              child: Icon(
-                _isPerfect ? Icons.emoji_events_rounded : Icons.check_circle_outline_rounded,
-                color: diff.accent,
-                size: 36,
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            Text(
-              '${widget.communityName} · ${diff.label}',
-              style: const TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: Color(0xFF6B7280)),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Quiz Complete!',
-              style: TextStyle(fontFamily: 'Parkinsans', fontWeight: FontWeight.w700, fontSize: 24, color: Color(0xFF111827)),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'You scored ${widget.score} out of ${widget.total} ($_percentage%)',
-              style: const TextStyle(fontFamily: 'Metropolis', fontSize: 15, color: Color(0xFF374151)),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-
-            // Score ring
-            SizedBox(
-              width: 120, height: 120,
-              child: Stack(alignment: Alignment.center, children: [
+              child: Column(children: [
+                Container(
+                  width: 64, height: 64,
+                  decoration: BoxDecoration(color: st.accent.withValues(alpha: 0.1), shape: BoxShape.circle),
+                  child: Icon(Icons.emoji_events_rounded, color: st.accent, size: 32),
+                ),
+                const SizedBox(height: 16),
+                Text('${widget.communityName} · ${widget.level.stageName}',
+                    style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, fontWeight: FontWeight.w500, color: st.accent)),
+                const SizedBox(height: 6),
+                const Text('Quiz complete', style: TextStyle(fontFamily: 'Parkinsans', fontSize: 26, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+                const SizedBox(height: 8),
+                Text('You scored ${widget.score} out of ${widget.total} ($_pct%).',
+                    style: const TextStyle(fontFamily: 'Metropolis', fontSize: 15, color: Color(0xFF6B7280)), textAlign: TextAlign.center),
+                const SizedBox(height: 24),
                 SizedBox(
                   width: 120, height: 120,
-                  child: CircularProgressIndicator(
-                    value: widget.total > 0 ? widget.score / widget.total : 0,
-                    strokeWidth: 10,
-                    backgroundColor: const Color(0xFFE5E7EB),
-                    valueColor: AlwaysStoppedAnimation(diff.accent),
-                  ),
+                  child: Stack(alignment: Alignment.center, children: [
+                    SizedBox(
+                      width: 120, height: 120,
+                      child: CircularProgressIndicator(
+                        value: widget.total > 0 ? widget.score / widget.total : 0,
+                        strokeWidth: 10,
+                        backgroundColor: const Color(0xFFE5E7EB),
+                        valueColor: AlwaysStoppedAnimation(st.accent),
+                      ),
+                    ),
+                    Text('$_pct%',
+                        style: TextStyle(fontFamily: 'Parkinsans', fontWeight: FontWeight.w800, fontSize: 26, color: st.accent)),
+                  ]),
                 ),
-                Text(
-                  '$_percentage%',
-                  style: TextStyle(
-                    fontFamily: 'Parkinsans',
-                    fontWeight: FontWeight.w800,
-                    fontSize: 26,
-                    color: diff.accent,
-                  ),
-                ),
+                const SizedBox(height: 8),
               ]),
             ),
-            const SizedBox(height: 24),
 
-            // Perfect score certificate
+            // Certificate (perfect score only)
             if (_isPerfect) ...[
+              const SizedBox(height: 16),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFFFCD34D), width: 2),
-                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 12, offset: const Offset(0, 4))],
+                  gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
+                      colors: [Color(0xFFFFF9E6), Colors.white, Color(0xFFF4FBF7)]),
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(color: const Color(0xFFFCD34D), width: 1.5),
                 ),
-                child: Column(children: [
-                  const Icon(Icons.star_rounded, color: Color(0xFFF59E0B), size: 32),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Digital Certificate',
-                    style: TextStyle(fontFamily: 'Parkinsans', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF111827)),
+                padding: const EdgeInsets.all(4),
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(25), border: Border.all(color: const Color(0xFFFBBF24), width: 2)),
+                  child: Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: const Color(0xFFFCD34D)),
+                      color: Colors.white.withValues(alpha: 0.9),
+                    ),
+                    child: Column(children: [
+                      Image.asset('assets/branding/logo-wordmark-light.png', height: 24,
+                          errorBuilder: (_, e, st) => const Text('Awalingo', style: TextStyle(fontFamily: 'Parkinsans', fontSize: 18, fontWeight: FontWeight.w700))),
+                      const SizedBox(height: 16),
+                      const Text('Digital Certificate',
+                          style: TextStyle(fontFamily: 'Parkinsans', fontSize: 28, fontWeight: FontWeight.w600, color: Color(0xFF111827)), textAlign: TextAlign.center),
+                      const SizedBox(height: 6),
+                      const Text('Presented in recognition of a perfect AwaQuiz score',
+                          style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: Color(0xFF6B7280)), textAlign: TextAlign.center),
+                      const SizedBox(height: 16),
+                      const Text('THIS CERTIFIES THAT',
+                          style: TextStyle(fontFamily: 'Metropolis', fontSize: 11, letterSpacing: 2, color: Color(0xFF9CA3AF))),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFFCD34D), width: 2))),
+                        child: Text(userName,
+                            style: const TextStyle(fontFamily: 'Parkinsans', fontSize: 26, fontWeight: FontWeight.w600, color: Color(0xFF111827)), textAlign: TextAlign.center),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text('achieved a perfect score of', style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: Color(0xFF6B7280))),
+                      const SizedBox(height: 4),
+                      Text('${widget.score} / ${widget.total}',
+                          style: const TextStyle(fontFamily: 'Parkinsans', fontSize: 22, fontWeight: FontWeight.w700, color: Color(0xFF059669))),
+                      const SizedBox(height: 4),
+                      Text('${widget.communityName} · ${widget.level.stageName}',
+                          style: const TextStyle(fontFamily: 'Metropolis', fontSize: 15, fontWeight: FontWeight.w600, color: Color(0xFF111827))),
+                      const SizedBox(height: 16),
+                      Container(height: 1, color: const Color(0xFFFCD34D)),
+                      const SizedBox(height: 12),
+                      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                        Text('${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}',
+                            style: const TextStyle(fontFamily: 'Metropolis', fontSize: 12, color: Color(0xFF9CA3AF))),
+                        const Text('Awalingo Certification',
+                            style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, color: Color(0xFF9CA3AF))),
+                      ]),
+                    ]),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Perfect score on ${widget.communityName} ${diff.label} AwaQuiz',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: Color(0xFF6B7280)),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Score: ${widget.score} / ${widget.total}',
-                    style: const TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF111827)),
-                  ),
-                ]),
+                ),
               ),
-              const SizedBox(height: 16),
             ],
 
-            // Missed questions toggle
+            // Missed questions
             if (widget.missed.isNotEmpty) ...[
+              const SizedBox(height: 16),
               GestureDetector(
                 onTap: () => setState(() => _showMissed = !_showMissed),
                 child: Container(
-                  width: double.infinity,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFE5E7EB)),
-                  ),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFE5E7EB))),
                   child: Row(children: [
-                    Text(
-                      'Review missed questions (${widget.missed.length})',
-                      style: const TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600, fontSize: 14, color: Color(0xFF374151)),
+                    Expanded(
+                      child: Text(_showMissed ? 'Hide My Mistakes' : 'Show My Mistakes',
+                          style: const TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600, fontSize: 14, color: Color(0xFF374151))),
                     ),
-                    const Spacer(),
-                    Icon(_showMissed ? Icons.expand_less : Icons.expand_more, color: const Color(0xFF6B7280)),
+                    Icon(_showMissed ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, color: const Color(0xFF6B7280)),
                   ]),
                 ),
               ),
               if (_showMissed) ...[
                 const SizedBox(height: 8),
-                ...widget.missed.asMap().entries.map((e) => Padding(
+                ...widget.missed.map((e) => Padding(
                       padding: const EdgeInsets.only(bottom: 10),
                       child: Container(
                         padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFE5E7EB)),
-                        ),
+                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFE5E7EB))),
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(
-                            '${e.key + 1}. ${e.value.question.text}',
-                            style: const TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600, fontSize: 14, color: Color(0xFF111827)),
-                          ),
+                          Text(e.question.text, style: const TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600, fontSize: 14, color: Color(0xFF111827))),
                           const SizedBox(height: 10),
-                          if (e.value.selectedAnswer != null)
-                            _ReviewRow(
-                              label: 'Your answer',
-                              value: e.value.selectedAnswer!,
-                              color: const Color(0xFFF43F5E),
-                              bg: const Color(0xFFFFF1F2),
-                            )
-                          else
-                            const _ReviewRow(
-                              label: 'Your answer',
-                              value: 'No answer selected',
-                              color: Color(0xFF9CA3AF),
-                              bg: Color(0xFFF3F4F6),
-                            ),
+                          e.selectedAnswer != null
+                              ? _ReviewRow(label: 'Your answer:', value: e.selectedAnswer!, color: const Color(0xFFB91C1C), bg: const Color(0xFFFFF5F5))
+                              : const _ReviewRow(label: 'Your answer:', value: 'No answer selected', color: Color(0xFF6B7280), bg: Color(0xFFF3F4F6)),
                           const SizedBox(height: 6),
-                          _ReviewRow(
-                            label: 'Correct answer',
-                            value: e.value.question.correctAnswer,
-                            color: const Color(0xFF10B981),
-                            bg: const Color(0xFFD1FAE5),
-                          ),
+                          _ReviewRow(label: 'Correct answer:', value: e.question.correctAnswer, color: const Color(0xFF059669), bg: const Color(0xFFF0FDF4)),
                         ]),
                       ),
                     )),
               ],
-              const SizedBox(height: 16),
             ],
 
-            // CTAs
+            const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
-              child: OutlinedButton(
+              child: ElevatedButton(
                 onPressed: () => Navigator.of(context).pop(),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 13),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: st.buttonBg, foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  side: const BorderSide(color: Color(0xFFD1D5DB)),
+                  elevation: 0,
                 ),
-                child: const Text('Try another level', style: TextStyle(fontFamily: 'Metropolis', color: Color(0xFF374151))),
+                child: const Text('Try another level', style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600, fontSize: 15)),
               ),
             ),
             const SizedBox(height: 10),
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton(
+              child: OutlinedButton(
                 onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst || r.settings.name == '/home'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF111827),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 13),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  elevation: 0,
+                  side: const BorderSide(color: Color(0xFFD1D5DB)),
                 ),
-                child: const Text('Back to Menu', style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600)),
+                child: const Text('Back to menu', style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600, fontSize: 15, color: Color(0xFF374151))),
               ),
             ),
           ]),
@@ -1353,10 +1283,11 @@ class _ReviewRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label, style: const TextStyle(fontFamily: 'Metropolis', fontSize: 11, color: Color(0xFF9CA3AF))),
+        Text(label, style: TextStyle(fontFamily: 'Metropolis', fontSize: 11, color: color.withValues(alpha: 0.7))),
         const SizedBox(height: 2),
         Text(value, style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600, fontSize: 13, color: color)),
       ]),
@@ -1364,7 +1295,7 @@ class _ReviewRow extends StatelessWidget {
   }
 }
 
-// ── Error / helper widgets ─────────────────────────────────────────────────────
+// ── Error widget ─────────────────────────────────────────────────────────────────
 
 class _ErrorState extends StatelessWidget {
   final String message;
@@ -1376,13 +1307,24 @@ class _ErrorState extends StatelessWidget {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.error_outline_rounded, color: Color(0xFFF59E0B), size: 40),
-          const SizedBox(height: 12),
-          Text(message, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Metropolis', fontSize: 14, color: Color(0xFF374151))),
-          const SizedBox(height: 16),
-          ElevatedButton(onPressed: onRetry, child: const Text('Retry')),
-        ]),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 480),
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white, borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: const Color(0xFFFCD34D)),
+          ),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.warning_amber_rounded, color: Color(0xFFF59E0B), size: 32),
+            const SizedBox(height: 12),
+            const Text('AwaQuiz unavailable',
+                style: TextStyle(fontFamily: 'Parkinsans', fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF92400E))),
+            const SizedBox(height: 8),
+            Text(message, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: Color(0xFF92400E))),
+            const SizedBox(height: 16),
+            ElevatedButton(onPressed: onRetry, child: const Text('Retry')),
+          ]),
+        ),
       ),
     );
   }
