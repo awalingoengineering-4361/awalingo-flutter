@@ -135,17 +135,6 @@ class AuthNotifier extends ChangeNotifier {
     }
   }
 
-  // ─── Apple OAuth ──────────────────────────────────────────────────────────
-  Future<void> signInWithApple() async {
-    _error = null;
-    try {
-      await _service.signInWithApple();
-    } catch (e) {
-      _error = e.toString().replaceFirst('Exception: ', '');
-      notifyListeners();
-    }
-  }
-
   // ─── Logout ───────────────────────────────────────────────────────────────
   Future<void> logout() async {
     _isLoading = true;

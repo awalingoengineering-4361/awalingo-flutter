@@ -43,9 +43,33 @@ class AwalingoApp extends StatefulWidget {
 class _AwalingoAppState extends State<AwalingoApp> {
   late final AuthNotifier _authNotifier = AuthNotifier();
   late final ThemeNotifier _themeNotifier = ThemeNotifier();
+  final _navigatorKey = GlobalKey<NavigatorState>();
+  // Track the auth state at startup so we only react to transitions,
+  // not to the initial session that the SplashScreen already handles.
+  late bool _wasAuthenticated;
+
+  @override
+  void initState() {
+    super.initState();
+    _wasAuthenticated = _authNotifier.isAuthenticated;
+    _authNotifier.addListener(_onAuthChange);
+  }
+
+  void _onAuthChange() {
+    final isAuth = _authNotifier.isAuthenticated;
+    if (isAuth && !_wasAuthenticated) {
+      // User just signed in (e.g. OAuth deep link returned on Android).
+      // Navigate to home and clear the back-stack so they can't go back
+      // to the sign-in screen.
+      _navigatorKey.currentState
+          ?.pushNamedAndRemoveUntil('/home', (_) => false);
+    }
+    _wasAuthenticated = isAuth;
+  }
 
   @override
   void dispose() {
+    _authNotifier.removeListener(_onAuthChange);
     _authNotifier.dispose();
     _themeNotifier.dispose();
     super.dispose();
@@ -60,6 +84,7 @@ class _AwalingoAppState extends State<AwalingoApp> {
         child: ListenableBuilder(
           listenable: _themeNotifier,
           builder: (context, _) => MaterialApp(
+            navigatorKey: _navigatorKey,
             title: 'Awalingo',
             debugShowCheckedModeBanner: false,
             theme: AppTheme.light,

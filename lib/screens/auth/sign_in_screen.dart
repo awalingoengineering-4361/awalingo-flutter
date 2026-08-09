@@ -52,13 +52,6 @@ class _SignInScreenState extends State<SignInScreen> {
     if (auth.error != null) _showError(auth.error!);
   }
 
-  Future<void> _handleAppleLogin() async {
-    final auth = AuthProvider.of(context);
-    await auth.signInWithApple();
-    if (!mounted) return;
-    if (auth.error != null) _showError(auth.error!);
-  }
-
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -139,24 +132,10 @@ class _SignInScreenState extends State<SignInScreen> {
                     const SizedBox(height: 20),
 
                     // Social buttons
-                    Row(
-                      children: [
-                        Expanded(
-                          child: SocialLoginButton(
-                            label: 'Google',
-                            icon: const GoogleIcon(),
-                            onPressed: loading ? () {} : _handleGoogleLogin,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: SocialLoginButton(
-                            label: 'Apple',
-                            icon: const Icon(Icons.apple, size: 20, color: AppColors.foreground),
-                            onPressed: loading ? () {} : _handleAppleLogin,
-                          ),
-                        ),
-                      ],
+                    SocialLoginButton(
+                      label: 'Google',
+                      icon: const GoogleIcon(),
+                      onPressed: loading ? () {} : _handleGoogleLogin,
                     ),
                     const SizedBox(height: 24),
 

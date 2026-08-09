@@ -68,21 +68,6 @@ class AuthService {
     }
   }
 
-  // ─── Apple OAuth ──────────────────────────────────────────────────────────
-  // Mirrors: supabase.auth.signInWithOAuth({ provider: 'apple' })
-  Future<void> signInWithApple() async {
-    try {
-      await _supabase.auth.signInWithOAuth(
-        OAuthProvider.apple,
-        redirectTo: _oauthRedirect,
-      );
-    } on AuthException catch (e) {
-      throw _friendlyError(e.message);
-    } catch (e) {
-      throw Exception('Apple sign in failed. Please try again.');
-    }
-  }
-
   // ─── Sign Out ─────────────────────────────────────────────────────────────
   // Mirrors: supabase.auth.signOut()
   Future<void> logout() async {

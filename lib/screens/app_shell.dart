@@ -20,6 +20,9 @@ class _AppShellState extends State<AppShell> {
   NavTab _currentTab = NavTab.dictionary;
   bool _isJuror = false;
   bool _roleLoaded = false;
+  // Nested navigator for the Menu tab so sub-pages (AwaQuiz level picker, etc.)
+  // remain inside the shell and keep the top/bottom nav visible.
+  final _menuNavKey = GlobalKey<NavigatorState>();
 
   @override
   void didChangeDependencies() {
@@ -57,28 +60,45 @@ class _AppShellState extends State<AppShell> {
       case NavTab.translate:
         return const TranslateScreen();
       case NavTab.menu:
-        return MenuScreen(
-          onNavigate: (tab) => setState(() => _currentTab = tab),
+        // Nested Navigator: sub-pages pushed here stay within the shell so the
+        // top/bottom nav remains visible. The active quiz uses rootNavigator:true
+        // to go full-screen on top of the shell.
+        return Navigator(
+          key: _menuNavKey,
+          onGenerateRoute: (_) => MaterialPageRoute(
+            builder: (_) => MenuScreen(
+              onNavigate: (tab) => setState(() => _currentTab = tab),
+            ),
+          ),
         );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColorScheme.of(context).background,
-      appBar: const AppMobileHeader(),
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 200),
-        child: KeyedSubtree(
-          key: ValueKey(_currentTab),
-          child: _currentScreen,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        // Let the menu's nested navigator handle back before the shell does.
+        final menuNav = _menuNavKey.currentState;
+        if (menuNav != null && menuNav.canPop()) menuNav.pop();
+      },
+      child: Scaffold(
+        backgroundColor: AppColorScheme.of(context).background,
+        appBar: const AppMobileHeader(),
+        body: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          child: KeyedSubtree(
+            key: ValueKey(_currentTab),
+            child: _currentScreen,
+          ),
         ),
-      ),
-      bottomNavigationBar: AppBottomNav(
-        current: _currentTab,
-        onTap: (tab) => setState(() => _currentTab = tab),
-        isJuror: _isJuror,
+        bottomNavigationBar: AppBottomNav(
+          current: _currentTab,
+          onTap: (tab) => setState(() => _currentTab = tab),
+          isJuror: _isJuror,
+        ),
       ),
     );
   }
