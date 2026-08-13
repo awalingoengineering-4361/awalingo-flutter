@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // SystemChrome / SystemUiMode
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'theme/app_theme.dart';
@@ -15,6 +16,11 @@ import 'widgets/auth_guard.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Opt into edge-to-edge so Flutter correctly reports viewPadding for both
+  // the status bar (top) and gesture/button navigation bar (bottom).
+  // Required on Android 15+ and good practice on earlier versions.
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
   await dotenv.load(fileName: '.env');
 

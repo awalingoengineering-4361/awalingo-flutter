@@ -5,7 +5,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
 import '../../widgets/bottom_nav.dart';
-import 'awaquiz_screen.dart';
+import 'become_curator_screen.dart';
+import 'become_juror_screen.dart';
+import 'curator_requests_screen.dart';
 
 // ── Models ────────────────────────────────────────────────────────────────────
 
@@ -283,14 +285,6 @@ class _MenuScreenState extends State<MenuScreen> {
     }
   }
 
-  void _comingSoon() {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('Coming soon!',
-          style: TextStyle(fontFamily: 'Metropolis')),
-      behavior: SnackBarBehavior.floating,
-    ));
-  }
-
   @override
   Widget build(BuildContext context) {
     final c = AppColorScheme.of(context);
@@ -385,23 +379,9 @@ class _MenuScreenState extends State<MenuScreen> {
 
             const SizedBox(height: 4),
 
-            // ── AwaQuiz card (always shown) ───────────────────────────────
-            _AwaQuizCard(
-              communityName: _communityName,
-              c: c,
-              isDark: isDark,
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => AwaQuizScreen(
-                  languageId: _communityId,
-                  communityName: _communityName,
-                ),
-              )),
-            ),
-            const SizedBox(height: 12),
-
             // ── Become a Juror (Curator only) ─────────────────────────────
             if (isCurator) ...[
-              _BecomeJurorCard(c: c, isDark: isDark, onTap: _comingSoon),
+              _BecomeJurorCard(c: c, isDark: isDark, onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BecomeJurorScreen()))),
               const SizedBox(height: 12),
             ],
 
@@ -429,7 +409,7 @@ class _MenuScreenState extends State<MenuScreen> {
                 wordColor: isDark
                     ? const Color(0xFFFAFAFA)
                     : const Color(0xFF111111),
-                onTap: () => widget.onNavigate?.call(NavTab.dictionary),
+                onTap: () => widget.onNavigate?.call(NavTab.quiz),
                 c: c,
                 isDark: isDark,
               ),
@@ -456,7 +436,7 @@ class _MenuScreenState extends State<MenuScreen> {
                 wordColor: isDark
                     ? const Color(0xFFFAFAFA)
                     : const Color(0xFF111111),
-                onTap: _comingSoon,
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BecomeCuratorScreen())),
                 c: c,
                 isDark: isDark,
               ),
@@ -581,7 +561,7 @@ class _MenuScreenState extends State<MenuScreen> {
                 wordColor: isDark
                     ? const Color(0xFFFAFAFA)
                     : const Color(0xFF111111),
-                onTap: _comingSoon,
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CuratorRequestsScreen())),
                 c: c,
                 isDark: isDark,
               ),
@@ -658,168 +638,6 @@ class _RoleDescription extends StatelessWidget {
           fontSize: 13,
           color: c.mutedForeground,
         ),
-      ),
-    );
-  }
-}
-
-// ── AwaQuiz Card ──────────────────────────────────────────────────────────────
-
-class _AwaQuizCard extends StatelessWidget {
-  final String communityName;
-  final AppColorScheme c;
-  final bool isDark;
-  final VoidCallback onTap;
-
-  const _AwaQuizCard({
-    required this.communityName,
-    required this.c,
-    required this.isDark,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: c.card,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: c.border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.06),
-            blurRadius: 20,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 24, 24, 14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'AwaQuiz $communityName',
-                  style: TextStyle(
-                    fontFamily: 'Parkinsans',
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
-                    color: c.foreground,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'How good are your language skills? Test yourself and show it off.',
-                  style: TextStyle(
-                    fontFamily: 'Metropolis',
-                    fontSize: 13,
-                    color: c.mutedForeground,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? const Color(0xFF0C4A6E).withValues(alpha: 0.35)
-                    : const Color(0xFFF0F9FF),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: isDark
-                      ? const Color(0xFF075985)
-                      : const Color(0xFFBAE6FD),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: isDark
-                                ? const Color(0xFF075985).withValues(alpha: 0.5)
-                                : const Color(0xFFE0F2FE),
-                            borderRadius: BorderRadius.circular(100),
-                          ),
-                          child: Text(
-                            'Community challenge',
-                            style: TextStyle(
-                              fontFamily: 'Metropolis',
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                              color: isDark
-                                  ? const Color(0xFF7DD3FC)
-                                  : const Color(0xFF075985),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Test your skills in $communityName.',
-                          style: TextStyle(
-                            fontFamily: 'Metropolis',
-                            fontSize: 13,
-                            color: c.mutedForeground,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  GestureDetector(
-                    onTap: onTap,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? const Color(0xFFFAFAFA)
-                            : const Color(0xFF111111),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.psychology_outlined,
-                            size: 15,
-                            color: isDark
-                                ? const Color(0xFF0A0A0A)
-                                : Colors.white,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Take Quiz',
-                            style: TextStyle(
-                              fontFamily: 'Metropolis',
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: isDark
-                                  ? const Color(0xFF0A0A0A)
-                                  : Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }

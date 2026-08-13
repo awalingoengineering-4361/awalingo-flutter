@@ -177,27 +177,29 @@ class _VoteDetailService {
 
   Future<List<_NeoOption>> loadNeosForJury(
       int termId, int neoLangId, String userId) async {
-    final rows = await _db
+    // Fetch all neos this user has already rated and exclude them at DB level.
+    // Client-side filtering returned the same 11 rows on every Refresh call;
+    // excluding at the query level matches Next.js behaviour and returns genuinely new neos.
+    final ratedRows = await _db
+        .from('neo_rating')
+        .select('neoId')
+        .eq('userId', userId);
+    final alreadyRatedIds = ratedRows.map((r) => r['neoId'] as int).toList();
+
+    final base = _db
         .from('neos')
         .select('id, text, type, rejectCount')
         .eq('termId', termId)
         .eq('languageId', neoLangId)
         .neq('userId', userId)
-        .lt('rejectCount', 3)
+        .lt('rejectCount', 3);
+
+    final rows = await (alreadyRatedIds.isNotEmpty
+            ? base.not('id', 'in', alreadyRatedIds)
+            : base)
         .limit(11);
 
-    if (rows.isEmpty) return [];
-
-    final neoIds = rows.map((r) => r['id'] as int).toList();
-    final ratedRows = await _db
-        .from('neo_rating')
-        .select('neoId')
-        .eq('userId', userId)
-        .inFilter('neoId', neoIds);
-    final ratedIds = ratedRows.map((r) => r['neoId'] as int).toSet();
-
     return rows
-        .where((r) => !ratedIds.contains(r['id'] as int))
         .map((r) => _NeoOption(
               id: r['id'] as int,
               text: r['text'] as String,
@@ -1453,7 +1455,7 @@ class _JuryDetailScreenState extends State<JuryDetailScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: () {
+                      onPressed: selected.isEmpty ? null : () {
                         Navigator.of(ctx).pop();
                         _rate(neoId, 0,
                             rejectionReason: selected.join(', '));
