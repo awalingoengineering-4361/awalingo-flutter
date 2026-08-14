@@ -58,7 +58,7 @@ class _TranslateService {
   Future<List<TermWithNeoCount>> loadTerms(int langId) async {
     final termRows = await _db
         .from('terms')
-        .select('id, text, meaning, partOfSpeech:part_of_speech!partOfSpeechId(name)')
+        .select('id, text, meaning, partOfSpeech:part_of_speech!partOfSpeechId(name), concept:concepts!conceptId(gloss)')
         .eq('languageId', langId)
         .limit(20);
 
@@ -79,10 +79,13 @@ class _TranslateService {
 
     return termRows.map((r) {
       final pos = r['partOfSpeech'] as Map<String, dynamic>?;
+      final concept = r['concept'] as Map<String, dynamic>?;
+      final gloss = concept?['gloss'] as String?;
+      final meaning = r['meaning'] as String?;
       return TermWithNeoCount(
         id: r['id'] as int,
         text: r['text'] as String,
-        meaning: r['meaning'] as String? ?? '',
+        meaning: (meaning != null && meaning.isNotEmpty) ? meaning : (gloss ?? ''),
         partOfSpeech: pos?['name'] as String? ?? '',
         neoCount: neoCountMap[r['id'] as int] ?? 0,
         languageId: langId,

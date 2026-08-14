@@ -18,9 +18,9 @@ const _kStageIcons = [
 ];
 
 class _StageStyle {
-  final Color cardBg;
+  final Color cardBg;      // light-only tinted bg
   final Color topBorder;
-  final Color iconBg;
+  final Color iconBg;      // light-only icon bg
   final Color iconBorder;
   final Color accent;
   final Color buttonBg;
@@ -29,6 +29,11 @@ class _StageStyle {
     required this.iconBg, required this.iconBorder,
     required this.accent, required this.buttonBg,
   });
+
+  // Dark mode: tint the card surface with a hint of the accent colour.
+  Color darkCardBg() => Color.alphaBlend(accent.withValues(alpha: 0.08), const Color(0xFF171717));
+  Color darkIconBg() => Color.alphaBlend(accent.withValues(alpha: 0.15), const Color(0xFF1C1C1E));
+  Color darkIconBorder() => accent.withValues(alpha: 0.3);
 }
 
 const _kStageStyles = [
@@ -147,7 +152,6 @@ class _AwaQuizService {
         .maybeSingle();
     final balance = (profile?['cowryBalance'] as int?) ?? 0;
 
-    // Sort: difficulty order first, then by id within same difficulty
     final raw = setsRows
         .map((r) {
           final diff = _diffFrom(r['difficulty'] as String? ?? '');
@@ -237,9 +241,9 @@ class _AwaQuizService {
 // ── Level Picker Screen ─────────────────────────────────────────────────────────
 
 class AwaQuizScreen extends StatefulWidget {
-  final int languageId;
-  final String communityName;
-  const AwaQuizScreen({super.key, required this.languageId, required this.communityName});
+  final int? languageId;
+  final String? communityName;
+  const AwaQuizScreen({super.key, this.languageId, this.communityName});
 
   @override
   State<AwaQuizScreen> createState() => _AwaQuizScreenState();
@@ -251,10 +255,16 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
   String? _error;
   List<_QuizLevel> _levels = [];
   int _cowryBalance = 0;
+  int _languageId = 1;
+  String _communityName = 'Community';
 
   @override
   void initState() {
     super.initState();
+    if (widget.languageId != null) {
+      _languageId = widget.languageId!;
+      _communityName = widget.communityName ?? 'Community';
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
@@ -264,7 +274,19 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
     try {
       final userId = AuthProvider.of(context).user?.id;
       if (userId == null) { if (mounted) setState(() => _loading = false); return; }
-      final data = await _service.loadLevels(userId, widget.languageId);
+
+      if (widget.languageId == null) {
+        final row = await Supabase.instance.client
+            .from('user_target_languages')
+            .select('language:languages!languageId(id, name)')
+            .eq('userId', userId)
+            .maybeSingle();
+        final lang = row?['language'] as Map<String, dynamic>?;
+        _languageId = (lang?['id'] as int?) ?? 1;
+        _communityName = (lang?['name'] as String?) ?? 'Community';
+      }
+
+      final data = await _service.loadLevels(userId, _languageId);
       if (mounted) setState(() { _levels = data.levels; _cowryBalance = data.cowryBalance; _loading = false; });
     } catch (e) {
       if (mounted) setState(() { _error = e.toString(); _loading = false; });
@@ -279,7 +301,7 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
       backgroundColor: Colors.transparent,
       builder: (_) => _StartModal(
         level: level,
-        communityName: widget.communityName,
+        communityName: _communityName,
         cowryBalance: _cowryBalance,
         onStart: () => _startQuiz(level),
       ),
@@ -300,17 +322,15 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
         return;
       }
       final attemptId = await _service.startAttempt(
-        userId: userId, languageId: widget.languageId, setId: level.id,
+        userId: userId, languageId: _languageId, setId: level.id,
         difficulty: level.difficulty, currentBalance: _cowryBalance,
         cowryCost: level.difficulty.cowryCost,
       );
       if (!mounted) return;
-      // rootNavigator: true so the quiz covers the full screen above the shell
-      // (top/bottom nav hidden during active quiz).
       await Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(
         builder: (_) => _QuizScreen(
           questions: questions, level: level,
-          communityName: widget.communityName,
+          communityName: _communityName,
           attemptId: attemptId, service: _service,
         ),
       ));
@@ -325,20 +345,20 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // No Scaffold — rendered inside AppShell's nested Navigator so the top
-    // AppBar and bottom nav remain visible.
+    final c = AppColorScheme.of(context);
+    // No Scaffold — rendered inside AppShell so top/bottom nav stay visible.
     return ColoredBox(
-      color: const Color(0xFFF3F4F6),
+      color: c.background,
       child: _loading
           ? Center(
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: c.card,
                   borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                  border: Border.all(color: c.border),
                 ),
-                child: const Text('Loading quiz...', style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, color: Color(0xFF6B7280))),
+                child: Text('Loading quiz...', style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, color: c.mutedForeground)),
               ),
             )
           : _error != null
@@ -352,9 +372,9 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
                       Container(
                         width: double.infinity,
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: c.card,
                           borderRadius: BorderRadius.circular(24),
-                          border: Border.all(color: const Color(0xFFF3F4F6)),
+                          border: Border.all(color: c.border),
                           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 16, offset: const Offset(0, 2))],
                         ),
                         padding: const EdgeInsets.all(24),
@@ -363,17 +383,17 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
                           children: [
                             Text(
                               'COMMUNITY QUIZ',
-                              style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 1.4, color: AppColorScheme.of(context).primary),
+                              style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 1.4, color: c.primary),
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'AwaQuiz ${widget.communityName}',
-                              style: const TextStyle(fontFamily: 'Parkinsans', fontSize: 28, fontWeight: FontWeight.w600, color: Color(0xFF0A0A0A)),
+                              'AwaQuiz $_communityName',
+                              style: TextStyle(fontFamily: 'Parkinsans', fontSize: 28, fontWeight: FontWeight.w600, color: c.foreground),
                             ),
                             const SizedBox(height: 12),
-                            const Text(
+                            Text(
                               'Pick a level, answer a fresh set of questions, and see how far your community language skills can go.',
-                              style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, height: 1.5, color: Color(0xFF4B5563)),
+                              style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, height: 1.5, color: c.mutedForeground),
                             ),
                           ],
                         ),
@@ -384,14 +404,14 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
                         Container(
                           padding: const EdgeInsets.all(24),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFFFFBEB),
+                            color: c.secondary,
                             borderRadius: BorderRadius.circular(24),
-                            border: Border.all(color: const Color(0xFFFCD34D)),
+                            border: Border.all(color: c.border),
                           ),
-                          child: const Text(
+                          child: Text(
                             'No quiz levels available for this community yet.',
                             textAlign: TextAlign.center,
-                            style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: Color(0xFF92400E)),
+                            style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: c.mutedForeground),
                           ),
                         )
                       else
@@ -418,12 +438,14 @@ class _LevelCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final st = level.style;
     final locked = !level.isUnlocked;
-    final canAfford = cowryBalance >= level.difficulty.cowryCost;
+    final attempts = level.attemptCount;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final c = AppColorScheme.of(context);
 
-    // Flutter can't combine borderRadius with a non-uniform Border (different
-    // colors per side) in one BoxDecoration. Fix: outer DecoratedBox carries
-    // the shadow + radius; ClipRRect rounds the child; a 2-px colored strip
-    // inside the Column acts as the accent top border.
+    final cardBg = isDark ? st.darkCardBg() : st.cardBg;
+    final iconBg = isDark ? st.darkIconBg() : st.iconBg;
+    final iconBorder = isDark ? st.darkIconBorder() : st.iconBorder;
+
     return Opacity(
       opacity: locked ? 0.7 : 1.0,
       child: GestureDetector(
@@ -431,81 +453,82 @@ class _LevelCard extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2))],
+            boxShadow: [
+              BoxShadow(color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.07), blurRadius: 15, spreadRadius: -3, offset: const Offset(0, 2)),
+              BoxShadow(color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04), blurRadius: 20, spreadRadius: -2, offset: const Offset(0, 10)),
+            ],
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(16),
             child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: st.cardBg,
-                border: Border.all(color: const Color(0xFFE5E7EB)),
-              ),
+              decoration: BoxDecoration(color: cardBg),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 2-px accent top strip
                   Container(height: 2, color: st.topBorder),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-                    child: Column(
+                    padding: const EdgeInsets.all(20),
+                    child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: st.iconBg,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: st.iconBorder),
-                              ),
-                              child: Icon(level.icon, size: 20, color: st.accent),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: iconBg,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: iconBorder),
+                          ),
+                          child: Icon(level.icon, size: 20, color: st.accent),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
                                 children: [
-                                  Text('Stage ${level.stageNumber}',
-                                      style: TextStyle(fontFamily: 'Metropolis', fontSize: 11, fontWeight: FontWeight.w500, color: st.accent)),
-                                  const SizedBox(height: 2),
-                                  Text(level.stageName,
-                                      style: TextStyle(fontFamily: 'Parkinsans', fontSize: 18, fontWeight: FontWeight.w700, color: st.accent)),
+                                  Expanded(
+                                    child: Text(
+                                      level.stageName,
+                                      style: TextStyle(fontFamily: 'Parkinsans', fontSize: 16, fontWeight: FontWeight.w600, color: st.accent),
+                                    ),
+                                  ),
+                                  if (locked)
+                                    Icon(Icons.lock_rounded, size: 16, color: c.mutedForeground),
                                 ],
                               ),
-                            ),
-                            if (locked)
-                              const Padding(
-                                padding: EdgeInsets.only(top: 2),
-                                child: Icon(Icons.lock_rounded, size: 16, color: Color(0xFF9CA3AF)),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${level.questionCount} questions · ${level.difficulty.cowryCost} cowries · ${level.difficulty.secondsPerQuestion}s / question',
+                                style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, color: c.mutedForeground),
                               ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          '${level.questionCount} questions · ${level.difficulty.cowryCost} cowries · ${level.difficulty.secondsPerQuestion}s / question',
-                          style: const TextStyle(fontFamily: 'Metropolis', fontSize: 12, color: Color(0xFF6B7280)),
-                        ),
-                        if (level.attemptCount > 0) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            '${level.attemptCount} attempt${level.attemptCount == 1 ? '' : 's'}',
-                            style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, fontWeight: FontWeight.w500, color: st.accent),
-                          ),
-                        ],
-                        const SizedBox(height: 16),
-                        ElevatedButton.icon(
-                          onPressed: locked ? null : onTap,
-                          icon: Icon(locked ? Icons.lock_rounded : Icons.rocket_launch_rounded, size: 14),
-                          label: Text(locked ? 'Locked' : (canAfford ? 'Start Level' : 'Not enough cowries')),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: locked ? const Color(0xFFE5E7EB) : st.buttonBg,
-                            foregroundColor: locked ? const Color(0xFF9CA3AF) : Colors.white,
-                            textStyle: const TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600, fontSize: 13),
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            shape: const StadiumBorder(),
-                            elevation: 0,
+                              const SizedBox(height: 16),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    '$attempts ${attempts == 1 ? 'attempt' : 'attempts'}',
+                                    style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, fontWeight: FontWeight.w500, color: st.accent),
+                                  ),
+                                  ElevatedButton.icon(
+                                    onPressed: locked ? null : onTap,
+                                    icon: const Icon(Icons.rocket_launch_rounded, size: 14),
+                                    label: const Text('Play'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: st.buttonBg,
+                                      foregroundColor: Colors.white,
+                                      disabledBackgroundColor: c.secondary,
+                                      disabledForegroundColor: c.mutedForeground,
+                                      textStyle: const TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600, fontSize: 13),
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                                      shape: const StadiumBorder(),
+                                      elevation: 0,
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
                         ),
                       ],
@@ -544,11 +567,12 @@ class _StartModalState extends State<_StartModal> {
     final st = level.style;
     final diff = level.difficulty;
     final canAfford = widget.cowryBalance >= diff.cowryCost;
+    final c = AppColorScheme.of(context);
 
     return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      decoration: BoxDecoration(
+        color: c.card,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       ),
       padding: EdgeInsets.fromLTRB(24, 16, 24, MediaQuery.of(context).viewInsets.bottom + 32),
       child: Column(
@@ -559,7 +583,7 @@ class _StartModalState extends State<_StartModal> {
             child: Container(
               width: 36, height: 4,
               margin: const EdgeInsets.only(bottom: 20),
-              decoration: BoxDecoration(color: const Color(0xFFE5E7EB), borderRadius: BorderRadius.circular(2)),
+              decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2)),
             ),
           ),
           Row(
@@ -573,13 +597,19 @@ class _StartModalState extends State<_StartModal> {
                         style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, fontWeight: FontWeight.w500, color: st.accent)),
                     const SizedBox(height: 4),
                     Text('Ready for ${level.stageName}?',
-                        style: const TextStyle(fontFamily: 'Parkinsans', fontSize: 22, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+                        style: TextStyle(fontFamily: 'Parkinsans', fontSize: 22, fontWeight: FontWeight.w700, color: c.foreground)),
                   ],
                 ),
               ),
               Container(
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: st.iconBg, borderRadius: BorderRadius.circular(16), border: Border.all(color: st.iconBorder)),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).brightness == Brightness.dark ? st.darkIconBg() : st.iconBg,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Theme.of(context).brightness == Brightness.dark ? st.darkIconBorder() : st.iconBorder,
+                  ),
+                ),
                 child: Icon(level.icon, size: 24, color: st.accent),
               ),
             ],
@@ -614,9 +644,9 @@ class _StartModalState extends State<_StartModal> {
               ]),
             ),
           ],
-          const Text(
+          Text(
             'Cowries are deducted as soon as you start. If you exit after the quiz begins, the session ends and the fee is still used.',
-            style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, height: 1.5, color: Color(0xFF6B7280)),
+            style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, height: 1.5, color: c.mutedForeground),
           ),
           const SizedBox(height: 16),
           GestureDetector(
@@ -624,9 +654,9 @@ class _StartModalState extends State<_StartModal> {
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFFF9FAFB),
+                color: c.secondary,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFE5E7EB)),
+                border: Border.all(color: c.border),
               ),
               child: Row(children: [
                 AnimatedContainer(
@@ -634,15 +664,15 @@ class _StartModalState extends State<_StartModal> {
                   width: 20, height: 20,
                   decoration: BoxDecoration(
                     color: _agreed ? st.accent : Colors.transparent,
-                    border: Border.all(color: _agreed ? st.accent : const Color(0xFFD1D5DB), width: 2),
+                    border: Border.all(color: _agreed ? st.accent : c.border, width: 2),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: _agreed ? const Icon(Icons.check, color: Colors.white, size: 14) : null,
                 ),
                 const SizedBox(width: 10),
-                const Expanded(
-                  child: Text('I have read the rules and understand cowries will be deducted immediately.',
-                      style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: Color(0xFF374151))),
+                Expanded(
+                  child: Text('I have read the rules and I am ready to start.',
+                      style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: c.foreground)),
                 ),
               ]),
             ),
@@ -655,9 +685,9 @@ class _StartModalState extends State<_StartModal> {
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 13),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  side: const BorderSide(color: Color(0xFFD1D5DB)),
+                  side: BorderSide(color: c.border),
                 ),
-                child: const Text('Cancel', style: TextStyle(fontFamily: 'Metropolis', color: Color(0xFF374151))),
+                child: Text('Cancel', style: TextStyle(fontFamily: 'Metropolis', color: c.foreground)),
               ),
             ),
             const SizedBox(width: 12),
@@ -674,8 +704,8 @@ class _StartModalState extends State<_StartModal> {
                   padding: const EdgeInsets.symmetric(vertical: 13),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   elevation: 0,
-                  disabledBackgroundColor: const Color(0xFFE5E7EB),
-                  disabledForegroundColor: const Color(0xFF9CA3AF),
+                  disabledBackgroundColor: c.secondary,
+                  disabledForegroundColor: c.mutedForeground,
                 ),
                 child: _starting
                     ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
@@ -696,17 +726,18 @@ class _GridTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColorScheme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
+        color: c.secondary,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: c.border),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label, style: const TextStyle(fontFamily: 'Metropolis', fontSize: 11, color: Color(0xFF9CA3AF))),
+        Text(label, style: TextStyle(fontFamily: 'Metropolis', fontSize: 11, color: c.mutedForeground)),
         const SizedBox(height: 4),
-        Text(value, style: const TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w700, fontSize: 15, color: Color(0xFF111827))),
+        Text(value, style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w700, fontSize: 15, color: c.foreground)),
       ]),
     );
   }
@@ -815,6 +846,7 @@ class _QuizScreenState extends State<_QuizScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColorScheme.of(context);
     final diff = widget.level.difficulty;
     final st = widget.level.style;
     final question = widget.questions[_currentIndex];
@@ -824,12 +856,12 @@ class _QuizScreenState extends State<_QuizScreen> {
 
     if (_submitting) {
       return Scaffold(
-        backgroundColor: const Color(0xFFF3F4F6),
+        backgroundColor: c.background,
         body: Center(
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), border: Border.all(color: const Color(0xFFE5E7EB))),
-            child: const Text('Submitting quiz...', style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, color: Color(0xFF6B7280))),
+            decoration: BoxDecoration(color: c.card, borderRadius: BorderRadius.circular(24), border: Border.all(color: c.border)),
+            child: Text('Submitting quiz...', style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, color: c.mutedForeground)),
           ),
         ),
       );
@@ -839,7 +871,7 @@ class _QuizScreenState extends State<_QuizScreen> {
       canPop: false,
       onPopInvokedWithResult: (didPop, _) { if (!didPop) _openExitDialog(); },
       child: Scaffold(
-        backgroundColor: const Color(0xFFF3F4F6),
+        backgroundColor: c.background,
         body: Stack(children: [
           SafeArea(
             child: Column(children: [
@@ -852,11 +884,11 @@ class _QuizScreenState extends State<_QuizScreen> {
                     child: Container(
                       width: 40, height: 40,
                       decoration: BoxDecoration(
-                        color: Colors.white, shape: BoxShape.circle,
-                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                        color: c.card, shape: BoxShape.circle,
+                        border: Border.all(color: c.border),
                         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4)],
                       ),
-                      child: const Icon(Icons.close, size: 18, color: Color(0xFF111827)),
+                      child: Icon(Icons.close, size: 18, color: c.foreground),
                     ),
                   ),
                 ]),
@@ -867,9 +899,9 @@ class _QuizScreenState extends State<_QuizScreen> {
                   padding: const EdgeInsets.all(16),
                   child: Container(
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: c.card,
                       borderRadius: BorderRadius.circular(28),
-                      border: Border.all(color: const Color(0xFFE5E7EB)),
+                      border: Border.all(color: c.border),
                     ),
                     padding: const EdgeInsets.all(24),
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -878,11 +910,11 @@ class _QuizScreenState extends State<_QuizScreen> {
                         Expanded(
                           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                             Image.asset('assets/branding/logo-wordmark-light.png', height: 28,
-                                errorBuilder: (_, e, st) => const Text('AwaQuiz',
-                                    style: TextStyle(fontFamily: 'Parkinsans', fontSize: 20, fontWeight: FontWeight.w700, color: Color(0xFF111827)))),
+                                errorBuilder: (_, e, st) => Text('AwaQuiz',
+                                    style: TextStyle(fontFamily: 'Parkinsans', fontSize: 20, fontWeight: FontWeight.w700, color: c.foreground))),
                             const SizedBox(height: 4),
                             Text('${widget.communityName} · ${widget.level.stageName}',
-                                style: const TextStyle(fontFamily: 'Metropolis', fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF6B7280))),
+                                style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, fontWeight: FontWeight.w500, color: c.mutedForeground)),
                           ]),
                         ),
                         const SizedBox(width: 12),
@@ -891,25 +923,25 @@ class _QuizScreenState extends State<_QuizScreen> {
                             duration: const Duration(milliseconds: 300),
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                             decoration: BoxDecoration(
-                              color: inWarning ? const Color(0xFFFFF1F2) : Colors.white,
+                              color: inWarning ? const Color(0xFFFFF1F2) : c.secondary,
                               borderRadius: BorderRadius.circular(100),
-                              border: Border.all(color: inWarning ? const Color(0xFFFDA4AF) : const Color(0xFFE5E7EB)),
+                              border: Border.all(color: inWarning ? const Color(0xFFFDA4AF) : c.border),
                             ),
                             child: Row(mainAxisSize: MainAxisSize.min, children: [
                               Icon(Icons.access_time_rounded, size: 15,
-                                  color: inWarning ? const Color(0xFFE11D48) : const Color(0xFF6B7280)),
+                                  color: inWarning ? const Color(0xFFE11D48) : c.mutedForeground),
                               const SizedBox(width: 5),
                               Text(_fmt(_secondsLeft.clamp(0, 9999)),
                                   style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w700, fontSize: 16,
-                                      color: inWarning ? const Color(0xFFE11D48) : const Color(0xFF374151))),
+                                      color: inWarning ? const Color(0xFFE11D48) : c.foreground)),
                             ]),
                           ),
                           const SizedBox(height: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                            decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(16)),
+                            decoration: BoxDecoration(color: c.secondary, borderRadius: BorderRadius.circular(16)),
                             child: Text('${_currentIndex + 1} / ${widget.questions.length}',
-                                style: const TextStyle(fontFamily: 'Metropolis', fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF374151))),
+                                style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, fontWeight: FontWeight.w500, color: c.foreground)),
                           ),
                         ]),
                       ]),
@@ -919,9 +951,9 @@ class _QuizScreenState extends State<_QuizScreen> {
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(color: const Color(0xFFF9FAFB), borderRadius: BorderRadius.circular(24)),
+                        decoration: BoxDecoration(color: c.secondary, borderRadius: BorderRadius.circular(24)),
                         child: Text(question.text,
-                            style: const TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w500, fontSize: 16, height: 1.5, color: Color(0xFF0A0A0A))),
+                            style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w500, fontSize: 16, height: 1.5, color: c.foreground)),
                       ),
                       const SizedBox(height: 16),
 
@@ -936,19 +968,19 @@ class _QuizScreenState extends State<_QuizScreen> {
                               duration: const Duration(milliseconds: 150),
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                               decoration: BoxDecoration(
-                                color: isSelected ? st.accent.withValues(alpha: 0.06) : Colors.white,
+                                color: isSelected ? st.accent.withValues(alpha: 0.06) : c.card,
                                 borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: isSelected ? st.accent : const Color(0xFFE5E7EB), width: isSelected ? 2 : 1),
+                                border: Border.all(color: isSelected ? st.accent : c.border, width: isSelected ? 2 : 1),
                               ),
                               child: Row(children: [
                                 Text('${opt.label}.',
                                     style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w700, fontSize: 14,
-                                        color: isSelected ? st.accent : const Color(0xFF374151))),
+                                        color: isSelected ? st.accent : c.foreground)),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(opt.value,
                                       style: TextStyle(fontFamily: 'Metropolis', fontSize: 14,
-                                          color: isSelected ? st.accent : const Color(0xFF374151))),
+                                          color: isSelected ? st.accent : c.foreground)),
                                 ),
                               ]),
                             ),
@@ -969,9 +1001,9 @@ class _QuizScreenState extends State<_QuizScreen> {
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 13),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      side: const BorderSide(color: Color(0xFFE5E7EB)),
+                      side: BorderSide(color: c.border),
                     ),
-                    child: const Text('Exit', style: TextStyle(fontFamily: 'Metropolis', color: Color(0xFF374151))),
+                    child: Text('Exit', style: TextStyle(fontFamily: 'Metropolis', color: c.foreground)),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -983,8 +1015,8 @@ class _QuizScreenState extends State<_QuizScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 13),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         elevation: 0,
-                        disabledBackgroundColor: const Color(0xFFE5E7EB),
-                        disabledForegroundColor: const Color(0xFF9CA3AF),
+                        disabledBackgroundColor: c.secondary,
+                        disabledForegroundColor: c.mutedForeground,
                       ),
                       child: Text(isLast ? 'Submit quiz' : 'Next question',
                           style: const TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600)),
@@ -1007,16 +1039,16 @@ class _QuizScreenState extends State<_QuizScreen> {
                       constraints: const BoxConstraints(maxWidth: 380),
                       padding: const EdgeInsets.all(24),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: c.card,
                         borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                        border: Border.all(color: c.border),
                       ),
                       child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        const Text('End the quiz?',
-                            style: TextStyle(fontFamily: 'Parkinsans', fontSize: 20, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+                        Text('End the quiz?',
+                            style: TextStyle(fontFamily: 'Parkinsans', fontSize: 20, fontWeight: FontWeight.w700, color: c.foreground)),
                         const SizedBox(height: 8),
-                        const Text('Leaving now will end this quiz session. Your progress will be lost.',
-                            style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, height: 1.5, color: Color(0xFF6B7280))),
+                        Text('Leaving now will end this quiz session. Your progress will be lost.',
+                            style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, height: 1.5, color: c.mutedForeground)),
                         const SizedBox(height: 20),
                         Row(children: [
                           Expanded(
@@ -1025,9 +1057,9 @@ class _QuizScreenState extends State<_QuizScreen> {
                               style: OutlinedButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(vertical: 13),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                side: const BorderSide(color: Color(0xFFE5E7EB)),
+                                side: BorderSide(color: c.border),
                               ),
-                              child: const Text('Keep going', style: TextStyle(fontFamily: 'Metropolis', color: Color(0xFF374151))),
+                              child: Text('Keep going', style: TextStyle(fontFamily: 'Metropolis', color: c.foreground)),
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -1079,6 +1111,7 @@ class _ResultScreenState extends State<_ResultScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColorScheme.of(context);
     final st = widget.level.style;
     final meta = AuthProvider.of(context).user;
     final userName = (meta?.userMetadata?['name'] as String?)?.trim()
@@ -1087,7 +1120,7 @@ class _ResultScreenState extends State<_ResultScreen> {
         ?? 'You';
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF3F4F6),
+      backgroundColor: c.background,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(16, 24, 16, 40),
@@ -1097,9 +1130,9 @@ class _ResultScreenState extends State<_ResultScreen> {
               width: double.infinity,
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: c.card,
                 borderRadius: BorderRadius.circular(28),
-                border: Border.all(color: const Color(0xFFE5E7EB)),
+                border: Border.all(color: c.border),
                 boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 12, offset: const Offset(0, 4))],
               ),
               child: Column(children: [
@@ -1112,10 +1145,10 @@ class _ResultScreenState extends State<_ResultScreen> {
                 Text('${widget.communityName} · ${widget.level.stageName}',
                     style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, fontWeight: FontWeight.w500, color: st.accent)),
                 const SizedBox(height: 6),
-                const Text('Quiz complete', style: TextStyle(fontFamily: 'Parkinsans', fontSize: 26, fontWeight: FontWeight.w700, color: Color(0xFF111827))),
+                Text('Quiz complete', style: TextStyle(fontFamily: 'Parkinsans', fontSize: 26, fontWeight: FontWeight.w700, color: c.foreground)),
                 const SizedBox(height: 8),
                 Text('You scored ${widget.score} out of ${widget.total} ($_pct%).',
-                    style: const TextStyle(fontFamily: 'Metropolis', fontSize: 15, color: Color(0xFF6B7280)), textAlign: TextAlign.center),
+                    style: TextStyle(fontFamily: 'Metropolis', fontSize: 15, color: c.mutedForeground), textAlign: TextAlign.center),
                 const SizedBox(height: 24),
                 SizedBox(
                   width: 120, height: 120,
@@ -1125,7 +1158,7 @@ class _ResultScreenState extends State<_ResultScreen> {
                       child: CircularProgressIndicator(
                         value: widget.total > 0 ? widget.score / widget.total : 0,
                         strokeWidth: 10,
-                        backgroundColor: const Color(0xFFE5E7EB),
+                        backgroundColor: c.border,
                         valueColor: AlwaysStoppedAnimation(st.accent),
                       ),
                     ),
@@ -1137,7 +1170,7 @@ class _ResultScreenState extends State<_ResultScreen> {
               ]),
             ),
 
-            // Certificate (perfect score only)
+            // Certificate (perfect score only) — intentionally stays light/parchment-themed
             if (_isPerfect) ...[
               const SizedBox(height: 16),
               Container(
@@ -1161,7 +1194,7 @@ class _ResultScreenState extends State<_ResultScreen> {
                     ),
                     child: Column(children: [
                       Image.asset('assets/branding/logo-wordmark-light.png', height: 24,
-                          errorBuilder: (_, e, st) => const Text('Awalingo', style: TextStyle(fontFamily: 'Parkinsans', fontSize: 18, fontWeight: FontWeight.w700))),
+                          errorBuilder: (_, e, s) => const Text('Awalingo', style: TextStyle(fontFamily: 'Parkinsans', fontSize: 18, fontWeight: FontWeight.w700))),
                       const SizedBox(height: 16),
                       const Text('Digital Certificate',
                           style: TextStyle(fontFamily: 'Parkinsans', fontSize: 28, fontWeight: FontWeight.w600, color: Color(0xFF111827)), textAlign: TextAlign.center),
@@ -1208,13 +1241,13 @@ class _ResultScreenState extends State<_ResultScreen> {
                 onTap: () => setState(() => _showMissed = !_showMissed),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFE5E7EB))),
+                  decoration: BoxDecoration(color: c.card, borderRadius: BorderRadius.circular(16), border: Border.all(color: c.border)),
                   child: Row(children: [
                     Expanded(
                       child: Text(_showMissed ? 'Hide My Mistakes' : 'Show My Mistakes',
-                          style: const TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600, fontSize: 14, color: Color(0xFF374151))),
+                          style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600, fontSize: 14, color: c.foreground)),
                     ),
-                    Icon(_showMissed ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, color: const Color(0xFF6B7280)),
+                    Icon(_showMissed ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, color: c.mutedForeground),
                   ]),
                 ),
               ),
@@ -1224,9 +1257,9 @@ class _ResultScreenState extends State<_ResultScreen> {
                       padding: const EdgeInsets.only(bottom: 10),
                       child: Container(
                         padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFE5E7EB))),
+                        decoration: BoxDecoration(color: c.card, borderRadius: BorderRadius.circular(16), border: Border.all(color: c.border)),
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(e.question.text, style: const TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600, fontSize: 14, color: Color(0xFF111827))),
+                          Text(e.question.text, style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600, fontSize: 14, color: c.foreground)),
                           const SizedBox(height: 10),
                           e.selectedAnswer != null
                               ? _ReviewRow(label: 'Your answer:', value: e.selectedAnswer!, color: const Color(0xFFB91C1C), bg: const Color(0xFFFFF5F5))
@@ -1261,9 +1294,9 @@ class _ResultScreenState extends State<_ResultScreen> {
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  side: const BorderSide(color: Color(0xFFD1D5DB)),
+                  side: BorderSide(color: c.border),
                 ),
-                child: const Text('Back to menu', style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600, fontSize: 15, color: Color(0xFF374151))),
+                child: Text('Back to menu', style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600, fontSize: 15, color: c.foreground)),
               ),
             ),
           ]),
@@ -1304,6 +1337,7 @@ class _ErrorState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = AppColorScheme.of(context);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -1311,7 +1345,7 @@ class _ErrorState extends StatelessWidget {
           constraints: const BoxConstraints(maxWidth: 480),
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: Colors.white, borderRadius: BorderRadius.circular(24),
+            color: c.card, borderRadius: BorderRadius.circular(24),
             border: Border.all(color: const Color(0xFFFCD34D)),
           ),
           child: Column(mainAxisSize: MainAxisSize.min, children: [

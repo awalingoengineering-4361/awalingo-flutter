@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 
-enum NavTab { dictionary, vote, translate, menu }
+enum NavTab { quiz, vote, translate, menu }
 
 class AppBottomNav extends StatelessWidget {
   final NavTab current;
@@ -18,16 +18,19 @@ class AppBottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = AppColorScheme.of(context);
+    // Add viewPadding.bottom so nav items sit above the gesture/button nav bar
+    // on edge-to-edge Android (the system bar would otherwise overlap the row).
+    final bottomPad = MediaQuery.of(context).viewPadding.bottom;
     return Container(
       decoration: BoxDecoration(
         color: c.card,
         border: Border(top: BorderSide(color: c.border)),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      padding: EdgeInsets.fromLTRB(24, 12, 24, 12 + bottomPad),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _NavItem(label: 'AwaDiko',  icon: Icons.menu_book_outlined,   activeIcon: Icons.menu_book,      active: current == NavTab.dictionary, onTap: () => onTap(NavTab.dictionary)),
+          _NavItem(label: 'AwaQuiz',  icon: Icons.extension_outlined,    activeIcon: Icons.extension,      active: current == NavTab.quiz,       onTap: () => onTap(NavTab.quiz)),
           _NavItem(label: isJuror ? 'Jury' : 'Vote', icon: Icons.how_to_vote_outlined, activeIcon: Icons.how_to_vote, active: current == NavTab.vote, onTap: () => onTap(NavTab.vote)),
           _NavItem(label: 'Translate',icon: Icons.lightbulb_outline,     activeIcon: Icons.lightbulb,      active: current == NavTab.translate,  onTap: () => onTap(NavTab.translate)),
           _NavItem(label: 'Menu',     icon: Icons.grid_view_outlined,    activeIcon: Icons.grid_view,      active: current == NavTab.menu,       onTap: () => onTap(NavTab.menu)),

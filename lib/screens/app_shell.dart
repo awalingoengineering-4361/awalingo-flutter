@@ -4,7 +4,7 @@ import '../theme/app_theme.dart';
 import '../services/auth_provider.dart';
 import '../widgets/bottom_nav.dart';
 import '../widgets/mobile_header.dart';
-import 'main/dictionary_screen.dart';
+import 'main/awaquiz_screen.dart';
 import 'main/vote_screen.dart';
 import 'main/translate_screen.dart';
 import 'main/menu_screen.dart';
@@ -17,7 +17,7 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> {
-  NavTab _currentTab = NavTab.dictionary;
+  NavTab _currentTab = NavTab.quiz;
   bool _isJuror = false;
   bool _roleLoaded = false;
   // Nested navigator for the Menu tab so sub-pages (AwaQuiz level picker, etc.)
@@ -53,8 +53,8 @@ class _AppShellState extends State<AppShell> {
 
   Widget get _currentScreen {
     switch (_currentTab) {
-      case NavTab.dictionary:
-        return const DictionaryScreen();
+      case NavTab.quiz:
+        return const AwaQuizScreen();
       case NavTab.vote:
         return VoteScreen(isJuror: _isJuror);
       case NavTab.translate:
