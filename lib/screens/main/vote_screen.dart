@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
+import '../../widgets/neo_audio_play_button.dart';
 
 // ─── Shared data model (used by translate_screen.dart) ────────────────────────
 class TermWithNeoCount {
@@ -40,7 +41,13 @@ class _NeoOption {
   final int id;
   final String text;
   final String type;
-  const _NeoOption({required this.id, required this.text, required this.type});
+  final String? audioUrl;
+  const _NeoOption({
+    required this.id,
+    required this.text,
+    required this.type,
+    this.audioUrl,
+  });
 }
 
 // ─── Services ─────────────────────────────────────────────────────────────────
@@ -157,7 +164,7 @@ class _VoteDetailService {
   Future<List<_NeoOption>> loadNeos(int termId, int communityLangId) async {
     final rows = await _db
         .from('neos')
-        .select('id, text, type, ratingScore, ratingCount, rejectCount')
+        .select('id, text, type, audioUrl, ratingScore, ratingCount, rejectCount')
         .eq('termId', termId)
         .eq('languageId', communityLangId)
         .gt('ratingCount', 0)
@@ -171,6 +178,7 @@ class _VoteDetailService {
               id: r['id'] as int,
               text: r['text'] as String,
               type: r['type'] as String? ?? 'POPULAR',
+              audioUrl: r['audioUrl'] as String?,
             ))
         .toList();
   }
@@ -188,7 +196,7 @@ class _VoteDetailService {
 
     final base = _db
         .from('neos')
-        .select('id, text, type, rejectCount')
+        .select('id, text, type, audioUrl, rejectCount')
         .eq('termId', termId)
         .eq('languageId', neoLangId)
         .neq('userId', userId)
@@ -204,6 +212,7 @@ class _VoteDetailService {
               id: r['id'] as int,
               text: r['text'] as String,
               type: r['type'] as String? ?? 'POPULAR',
+              audioUrl: r['audioUrl'] as String?,
             ))
         .toList();
   }
@@ -1045,6 +1054,8 @@ class _NeoRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
+          NeoAudioPlayButton(audioUrl: neo.audioUrl),
+          const SizedBox(width: 10),
           GestureDetector(
             onTap: onVote,
             child: AnimatedContainer(
@@ -1790,13 +1801,16 @@ class _JuryNeoRow extends StatelessWidget {
                   ),
                 ),
               ),
-              if (myRating != null)
+              if (myRating != null) ...[
                 Text(
                   myRating! == 0
                       ? '❌'
                       : _emojis[(myRating! - 1).clamp(0, 4)],
                   style: const TextStyle(fontSize: 20),
                 ),
+                const SizedBox(width: 8),
+              ],
+              NeoAudioPlayButton(audioUrl: neo.audioUrl),
             ],
           ),
           const SizedBox(height: 10),

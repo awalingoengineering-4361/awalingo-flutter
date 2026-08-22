@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
+import '../../services/permissions.dart';
 import '../../widgets/bottom_nav.dart';
 import 'become_curator_screen.dart';
 import 'become_juror_screen.dart';
@@ -101,69 +102,50 @@ class _HomeService {
     );
   }
 
+  // Ports neolingo/src/actions/leaderboard.ts getLeaderboard() 1:1:
+  // score = votes cast (1 pt) + neos suggested (5 pts), top 5 by score,
+  // name falls back to 'Anonymous Curation' — same algorithm, same
+  // fallback text, no per-user special-casing.
   Future<({
     List<_LeaderboardEntry> leaderboard,
     int votesCast,
     int wordsSuggested,
   })> loadLeaderboardData(String userId, int communityId) async {
-    // Fetch neos in the community language
     final neoRows = await _db
         .from('neos')
         .select('id, userId')
-        .eq('languageId', communityId)
-        .limit(500);
+        .eq('languageId', communityId);
 
-    // Count neos per user → 5 pts each
     final neoCountByUser = <String, int>{};
     final allNeoIds = <int>[];
     for (final row in neoRows) {
       final uid = row['userId'] as String;
-      final neoId = row['id'] as int;
       neoCountByUser[uid] = (neoCountByUser[uid] ?? 0) + 1;
-      allNeoIds.add(neoId);
+      allNeoIds.add(row['id'] as int);
     }
 
-    // Fetch votes for those neos → 1 pt each
     final voteCountByUser = <String, int>{};
-    int currentUserVotes = 0;
     if (allNeoIds.isNotEmpty) {
-      try {
-        final voteRows = await _db
-            .from('votes')
-            .select('userId, neoId')
-            .inFilter('neoId', allNeoIds);
-        for (final row in voteRows) {
-          final uid = row['userId'] as String;
-          voteCountByUser[uid] = (voteCountByUser[uid] ?? 0) + 1;
-        }
-        currentUserVotes = voteCountByUser[userId] ?? 0;
-      } catch (_) {
-        // votes table may have a different name; degrade gracefully
+      final voteRows = await _db
+          .from('votes')
+          .select('userId, neoId')
+          .inFilter('neoId', allNeoIds);
+      for (final row in voteRows) {
+        final uid = row['userId'] as String;
+        voteCountByUser[uid] = (voteCountByUser[uid] ?? 0) + 1;
       }
     }
 
-    // Combined score map
     final allIds = {...neoCountByUser.keys, ...voteCountByUser.keys};
     final scores = {
       for (final uid in allIds)
         uid: (voteCountByUser[uid] ?? 0) + (neoCountByUser[uid] ?? 0) * 5,
     };
 
-    // Top 5 by score
     final sorted = scores.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     final top5 = sorted.take(5).toList();
 
-    // Current user's display name from auth (available without a DB round-trip)
-    final authUser = _db.auth.currentUser;
-    final authMeta = authUser?.userMetadata ?? {};
-    final currentUserDisplayName = (authMeta['name'] as String?)?.trim() ??
-        (authMeta['display_name'] as String?)?.trim() ??
-        (authMeta['full_name'] as String?)?.trim() ??
-        authUser?.email ??
-        '';
-
-    // Fetch display names from user_profile for everyone in top 5
     List<_LeaderboardEntry> leaderboard = [];
     if (top5.isNotEmpty) {
       final top5Ids = top5.map((e) => e.key).toList();
@@ -174,21 +156,14 @@ class _HomeService {
 
       final nameMap = <String, String>{
         for (final p in profiles)
-          p['userId'] as String:
-              (p['name'] as String?)?.trim() ?? '',
+          p['userId'] as String: (p['name'] as String?)?.trim() ?? '',
       };
-
-      // Override the current user's entry with their live auth name —
-      // user_profile.name may not be written yet if they just signed in.
-      if (currentUserDisplayName.isNotEmpty) {
-        nameMap[userId] = currentUserDisplayName;
-      }
 
       leaderboard = top5.asMap().entries.map((e) {
         final uid = e.value.key;
         final name = (nameMap[uid] ?? '').isNotEmpty
             ? nameMap[uid]!
-            : authUser?.email ?? 'Curator ${e.key + 1}';
+            : 'Anonymous Curation';
         return _LeaderboardEntry(
           rank: e.key + 1,
           name: name,
@@ -199,7 +174,7 @@ class _HomeService {
 
     return (
       leaderboard: leaderboard,
-      votesCast: currentUserVotes,
+      votesCast: voteCountByUser[userId] ?? 0,
       wordsSuggested: neoCountByUser[userId] ?? 0,
     );
   }
@@ -300,9 +275,8 @@ class _MenuScreenState extends State<MenuScreen> {
     final isExplorer = _role == 'EXPLORER';
     final isCurator = _role == 'CURATOR';
     final isJuror   = _role == 'JUROR';
-    // MANAGER can review; ADMIN can also approve (matches Next.js review:requests / approve:requests)
-    final canReview  = _role == 'MANAGER' || _role == 'ADMIN';
-    final canApprove = _role == 'ADMIN';
+    final canReview  = hasPermission(_role, Permission.reviewRequests);
+    final canApprove = hasPermission(_role, Permission.approveRequests);
 
     if (_loading) {
       return Center(
