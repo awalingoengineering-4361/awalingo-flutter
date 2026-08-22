@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
+import '../../widgets/audio_recorder_field.dart';
 import 'vote_screen.dart' show TermWithNeoCount;
 
 // ─── Neo type metadata ────────────────────────────────────────────────────────
@@ -121,6 +122,7 @@ class _TranslateService {
         'languageId': neoLangId,
         'text': s.text.trim(),
         'type': s.type!.toUpperCase(),
+        if (s.audioUrl != null) 'audioUrl': s.audioUrl,
       });
     }
 
@@ -845,6 +847,7 @@ class _SuggestScreenState extends State<SuggestScreen> {
 class _SuggestionEntry {
   String? type;
   String text = '';
+  String? audioUrl;
 }
 
 // ─── Suggestion entry widget (matches SuggestInput layout) ───────────────────
@@ -1033,43 +1036,59 @@ class _SuggestionEntryWidgetState extends State<_SuggestionEntryWidget> {
           ),
           const SizedBox(height: 8),
 
-          // ── Row 2: Text input ──────────────────────────────────────
-          TextField(
-            controller: _controller,
-            maxLength: 50,
-            style: TextStyle(
-                color: c.foreground,
-                fontFamily: 'Metropolis',
-                fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'Type suggestion here',
-              hintStyle: TextStyle(
-                  fontSize: 14,
-                  fontFamily: 'Metropolis',
-                  color: c.mutedForeground),
-              counterStyle:
-                  TextStyle(fontSize: 11, color: c.mutedForeground),
-              filled: true,
-              fillColor: c.background,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: c.border),
+          // ── Row 2: Text input + voice recorder side by side ────────
+          // Matches SuggestInput.tsx: `flex-row gap-3` with the input as
+          // flex-1 and the recorder as shrink-0 (sized to its own content).
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  maxLength: 50,
+                  buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
+                  style: TextStyle(
+                      color: c.foreground,
+                      fontFamily: 'Metropolis',
+                      fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: 'Type suggestion here',
+                    hintStyle: TextStyle(
+                        fontSize: 14,
+                        fontFamily: 'Metropolis',
+                        color: c.mutedForeground),
+                    filled: true,
+                    fillColor: c.background,
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: c.border),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: c.border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: c.primary),
+                    ),
+                  ),
+                  onChanged: (v) {
+                    widget.entry.text = v;
+                    widget.onChanged();
+                  },
+                ),
               ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: c.border),
+              const SizedBox(width: 12),
+              AudioRecorderField(
+                audioUrl: widget.entry.audioUrl,
+                onChanged: (url) {
+                  setState(() => widget.entry.audioUrl = url);
+                  widget.onChanged();
+                },
               ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: c.primary),
-              ),
-            ),
-            onChanged: (v) {
-              widget.entry.text = v;
-              widget.onChanged();
-            },
+            ],
           ),
         ],
       ),

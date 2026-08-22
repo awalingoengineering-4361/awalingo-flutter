@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
+import '../../services/permissions.dart';
 
 // ── Model ─────────────────────────────────────────────────────────────────────
 
@@ -9,16 +10,28 @@ class _WordRequest {
   final int id;
   final String word;
   final String status;
+  final String userId;
   final String languageName;
   final DateTime createdAt;
   const _WordRequest({required this.id, required this.word, required this.status,
-      required this.languageName, required this.createdAt});
+      required this.userId, required this.languageName, required this.createdAt});
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
 
 class _CuratorRequestsService {
   final SupabaseClient _db = Supabase.instance.client;
+
+  Future<String?> fetchRole(String userId) async {
+    final row = await _db
+        .from('user_roles')
+        .select('role:roles!roleId(name)')
+        .eq('userId', userId)
+        .limit(1)
+        .maybeSingle();
+    final role = row?['role'] as Map<String, dynamic>?;
+    return role?['name'] as String?;
+  }
 
   Future<List<_WordRequest>> loadPending(int? communityLangId) async {
     var query = _db
@@ -37,6 +50,7 @@ class _CuratorRequestsService {
         id: r['id'] as int,
         word: r['word'] as String,
         status: r['status'] as String,
+        userId: r['userId'] as String,
         languageName: lang?['name'] as String? ?? 'Unknown',
         createdAt: DateTime.tryParse(r['createdAt'] as String? ?? '') ?? DateTime.now(),
       );
@@ -46,8 +60,8 @@ class _CuratorRequestsService {
   Future<void> approve(String userId, int requestId) async {
     await _db.from('translation_requests').update({
       'status': 'APPROVED',
-      'reviewedBy': userId,
-      'reviewedAt': DateTime.now().toIso8601String(),
+      'reviewedById': userId,
+      'updatedAt': DateTime.now().toIso8601String(),
     }).eq('id', requestId);
   }
 
@@ -55,8 +69,8 @@ class _CuratorRequestsService {
     await _db.from('translation_requests').update({
       'status': 'REJECTED',
       'rejectionReason': reason,
-      'reviewedBy': userId,
-      'reviewedAt': DateTime.now().toIso8601String(),
+      'reviewedById': userId,
+      'updatedAt': DateTime.now().toIso8601String(),
     }).eq('id', requestId);
   }
 }
@@ -75,6 +89,23 @@ class _CuratorRequestsScreenState extends State<CuratorRequestsScreen> {
   bool _loading = true;
   List<_WordRequest> _requests = [];
   int? _communityLangId;
+  String? _role;
+  String? _userId;
+
+  // Mirrors neolingo/src/actions/review.ts reviewRequest(): approving needs
+  // approve:requests, rejecting/reviewing needs review:requests, and nobody
+  // may act on their own submitted request unless they're ADMIN.
+  bool get _canReview => hasPermission(_role, Permission.reviewRequests);
+  bool get _canApprove => hasPermission(_role, Permission.approveRequests);
+  bool _canActOn(_WordRequest r) =>
+      r.userId != _userId || _role == 'ADMIN';
+
+  _WordRequest? _findRequest(int requestId) {
+    for (final r in _requests) {
+      if (r.id == requestId) return r;
+    }
+    return null;
+  }
 
   @override
   void didChangeDependencies() {
@@ -85,7 +116,9 @@ class _CuratorRequestsScreenState extends State<CuratorRequestsScreen> {
   Future<void> _load() async {
     final userId = AuthProvider.of(context).user?.id;
     if (userId == null) { setState(() => _loading = false); return; }
+    _userId = userId;
     try {
+      _role = await _service.fetchRole(userId);
       final utl = await Supabase.instance.client
           .from('user_target_languages').select('languageId').eq('userId', userId).maybeSingle();
       _communityLangId = utl?['languageId'] as int?;
@@ -98,8 +131,10 @@ class _CuratorRequestsScreenState extends State<CuratorRequestsScreen> {
   }
 
   Future<void> _approve(int requestId) async {
-    final userId = AuthProvider.of(context).user?.id;
-    if (userId == null) return;
+    final userId = _userId;
+    final request = _findRequest(requestId);
+    if (userId == null || request == null) return;
+    if (!_canApprove || !_canActOn(request)) return;
     setState(() { _requests = _requests.where((r) => r.id != requestId).toList(); });
     await _service.approve(userId, requestId);
     if (mounted) {
@@ -112,6 +147,8 @@ class _CuratorRequestsScreenState extends State<CuratorRequestsScreen> {
   }
 
   Future<void> _showRejectDialog(int requestId) async {
+    final request = _findRequest(requestId);
+    if (request == null || !_canReview || !_canActOn(request)) return;
     final c = AppColorScheme.of(context);
     final ctrl = TextEditingController();
     final confirmed = await showDialog<bool>(
@@ -147,7 +184,7 @@ class _CuratorRequestsScreenState extends State<CuratorRequestsScreen> {
     );
     if (confirmed != true) return;
     if (!mounted) return;
-    final userId = AuthProvider.of(context).user?.id;
+    final userId = _userId;
     if (userId == null) return;
     setState(() { _requests = _requests.where((r) => r.id != requestId).toList(); });
     await _service.reject(userId, requestId, ctrl.text.trim());
@@ -178,18 +215,26 @@ class _CuratorRequestsScreenState extends State<CuratorRequestsScreen> {
         color: c.primary,
         child: _loading
             ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
-            : _requests.isEmpty
-                ? _EmptyState(c: c)
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
-                    itemCount: _requests.length,
-                    itemBuilder: (_, i) => _RequestTile(
-                      request: _requests[i],
-                      c: c,
-                      onApprove: () => _approve(_requests[i].id),
-                      onReject: () => _showRejectDialog(_requests[i].id),
-                    ),
-                  ),
+            : !_canReview
+                ? _NotAuthorizedState(c: c)
+                : _requests.isEmpty
+                    ? _EmptyState(c: c)
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
+                        itemCount: _requests.length,
+                        itemBuilder: (_, i) {
+                          final request = _requests[i];
+                          final canActOnThis = _canActOn(request);
+                          return _RequestTile(
+                            request: request,
+                            c: c,
+                            canApprove: _canApprove && canActOnThis,
+                            canReject: _canReview && canActOnThis,
+                            onApprove: () => _approve(request.id),
+                            onReject: () => _showRejectDialog(request.id),
+                          );
+                        },
+                      ),
       ),
     );
   }
@@ -198,9 +243,18 @@ class _CuratorRequestsScreenState extends State<CuratorRequestsScreen> {
 class _RequestTile extends StatelessWidget {
   final _WordRequest request;
   final AppColorScheme c;
+  final bool canApprove;
+  final bool canReject;
   final VoidCallback onApprove;
   final VoidCallback onReject;
-  const _RequestTile({required this.request, required this.c, required this.onApprove, required this.onReject});
+  const _RequestTile({
+    required this.request,
+    required this.c,
+    required this.canApprove,
+    required this.canReject,
+    required this.onApprove,
+    required this.onReject,
+  });
 
   String _timeAgo(DateTime dt) {
     final diff = DateTime.now().difference(dt);
@@ -232,33 +286,68 @@ class _RequestTile extends StatelessWidget {
           ),
         ]),
         const SizedBox(height: 14),
-        Row(children: [
-          Expanded(
-            child: OutlinedButton(
-              onPressed: onReject,
-              style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFFEF4444),
-                  side: const BorderSide(color: Color(0xFFEF4444)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  padding: const EdgeInsets.symmetric(vertical: 10)),
-              child: const Text('Reject', style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w500)),
+        if (!canReject && !canApprove)
+          Text(
+            "You're not authorized to act on this request.",
+            style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, color: c.mutedForeground),
+          )
+        else
+          Row(children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: canReject ? onReject : null,
+                style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFEF4444),
+                    side: const BorderSide(color: Color(0xFFEF4444)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(vertical: 10)),
+                child: const Text('Reject', style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w500)),
+              ),
             ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: ElevatedButton(
-              onPressed: onApprove,
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF22C55E),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  padding: const EdgeInsets.symmetric(vertical: 10)),
-              child: const Text('Approve', style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w500)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: canApprove ? onApprove : null,
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF22C55E),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(vertical: 10)),
+                child: const Text('Approve', style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w500)),
+              ),
             ),
-          ),
-        ]),
+          ]),
       ]),
     );
+  }
+}
+
+class _NotAuthorizedState extends StatelessWidget {
+  final AppColorScheme c;
+  const _NotAuthorizedState({required this.c});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(children: [
+      SizedBox(
+        height: MediaQuery.of(context).size.height * 0.5,
+        child: Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(
+              width: 64, height: 64,
+              decoration: BoxDecoration(color: c.secondary, shape: BoxShape.circle),
+              child: Icon(Icons.lock_outline, size: 30, color: c.mutedForeground),
+            ),
+            const SizedBox(height: 16),
+            Text('Not authorized', style: TextStyle(fontFamily: 'Parkinsans', fontSize: 16, fontWeight: FontWeight.w600, color: c.foreground)),
+            const SizedBox(height: 6),
+            Text('Only curators, jurors, managers, and admins can review requests.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: c.mutedForeground)),
+          ]),
+        ),
+      ),
+    ]);
   }
 }
 

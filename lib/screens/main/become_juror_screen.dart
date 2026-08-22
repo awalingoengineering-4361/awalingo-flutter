@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
+import '../../services/permissions.dart';
 
 // ── Models ────────────────────────────────────────────────────────────────────
 
@@ -105,6 +106,11 @@ class _BecomeJurorScreenState extends State<BecomeJurorScreen> {
   int? _practiceRating;
   bool _alreadyApplied = false;
 
+  // Mirrors neolingo's requireCuratorApplicant(): only CURATORs may view or
+  // submit a juror application — enforced there before even loading the
+  // page's data, not just on submit.
+  bool _isCurator = false;
+
   // Form
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameCtrl = TextEditingController();
@@ -139,6 +145,13 @@ class _BecomeJurorScreenState extends State<BecomeJurorScreen> {
     final userId = AuthProvider.of(context).user?.id;
     if (userId == null) { setState(() => _loading = false); return; }
     try {
+      final role = await fetchUserRole(Supabase.instance.client, userId);
+      final isCurator = role == 'CURATOR';
+      if (!isCurator) {
+        if (mounted) setState(() { _isCurator = false; _loading = false; });
+        return;
+      }
+
       final results = await Future.wait([
         _service.loadPracticeNeo(userId),
         _service.hasExistingApplication(userId),
@@ -152,6 +165,7 @@ class _BecomeJurorScreenState extends State<BecomeJurorScreen> {
         _nameCtrl.text = prefill.name ?? '';
         _emailCtrl.text = prefill.email ?? '';
         setState(() {
+          _isCurator = true;
           _practiceNeo = neo;
           _alreadyApplied = hasApp;
           _loading = false;
@@ -164,6 +178,7 @@ class _BecomeJurorScreenState extends State<BecomeJurorScreen> {
   }
 
   Future<void> _submit() async {
+    if (!_isCurator) return;
     if (!_formKey.currentState!.validate()) return;
     if (!_agreementAccepted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -212,7 +227,9 @@ class _BecomeJurorScreenState extends State<BecomeJurorScreen> {
       ),
       body: _loading
           ? Center(child: CircularProgressIndicator(color: c.primary, strokeWidth: 2))
-          : _alreadyApplied && _step != 2
+          : !_isCurator
+              ? _NotCuratorView(c: c)
+              : _alreadyApplied && _step != 2
               ? _AlreadyAppliedView(c: c)
               : _step == 0
                   ? _PracticeStep(
@@ -479,6 +496,36 @@ class _DoneView extends StatelessWidget {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
               child: const Text('Done', style: TextStyle(fontFamily: 'Metropolis', fontSize: 15, fontWeight: FontWeight.w600)),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NotCuratorView extends StatelessWidget {
+  final AppColorScheme c;
+  const _NotCuratorView({required this.c});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64, height: 64,
+              decoration: BoxDecoration(color: c.secondary, shape: BoxShape.circle),
+              child: Icon(Icons.lock_outline, size: 30, color: c.mutedForeground),
+            ),
+            const SizedBox(height: 20),
+            Text('Not Available', style: TextStyle(fontFamily: 'Parkinsans', fontSize: 18, fontWeight: FontWeight.w600, color: c.foreground)),
+            const SizedBox(height: 8),
+            Text('Only curators can apply to become a Juror. Become a curator first to unlock this.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, color: c.mutedForeground)),
           ],
         ),
       ),
