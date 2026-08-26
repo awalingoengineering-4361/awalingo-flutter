@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_provider.dart';
+import '../services/permissions.dart';
 import '../widgets/bottom_nav.dart';
+import '../widgets/curate_guard_modal.dart';
 import '../widgets/mobile_header.dart';
 import 'main/awaquiz_screen.dart';
 import 'main/vote_screen.dart';
@@ -19,6 +21,7 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   NavTab _currentTab = NavTab.quiz;
   bool _isJuror = false;
+  String? _role;
   bool _roleLoaded = false;
   // Nested navigator for the Menu tab so sub-pages (AwaQuiz level picker, etc.)
   // remain inside the shell and keep the top/bottom nav visible.
@@ -37,18 +40,27 @@ class _AppShellState extends State<AppShell> {
     final userId = AuthProvider.of(context).user?.id;
     if (userId == null) return;
     try {
-      final row = await Supabase.instance.client
-          .from('user_roles')
-          .select('role:roles!roleId(name)')
-          .eq('userId', userId)
-          .limit(1)
-          .maybeSingle();
-      final name =
-          (row?['role'] as Map<String, dynamic>?)?['name'] as String?;
-      if (mounted) setState(() => _isJuror = name == 'JUROR');
+      final role = await fetchUserRole(Supabase.instance.client, userId);
+      if (mounted) setState(() { _role = role; _isJuror = role == 'JUROR'; });
     } catch (e) {
       debugPrint('AppShell role fetch: $e');
     }
+  }
+
+  // Mirrors BottomNavigation.tsx's Translate nav item: without create:neos
+  // permission, tapping it never reaches the terms list — it shows the
+  // Curator-in-waiting guard (or, in the unreachable edge case where the
+  // user also lacks take:quiz, just falls back to the Menu tab).
+  void _onNavTap(NavTab tab) {
+    if (tab == NavTab.translate && !hasPermission(_role, Permission.createNeos)) {
+      if (!hasPermission(_role, Permission.takeQuiz)) {
+        setState(() => _currentTab = NavTab.menu);
+      } else {
+        showCurateGuardModal(context);
+      }
+      return;
+    }
+    setState(() => _currentTab = tab);
   }
 
   Widget get _currentScreen {
@@ -67,7 +79,7 @@ class _AppShellState extends State<AppShell> {
           key: _menuNavKey,
           onGenerateRoute: (_) => MaterialPageRoute(
             builder: (_) => MenuScreen(
-              onNavigate: (tab) => setState(() => _currentTab = tab),
+              onNavigate: _onNavTap,
             ),
           ),
         );
@@ -96,7 +108,7 @@ class _AppShellState extends State<AppShell> {
         ),
         bottomNavigationBar: AppBottomNav(
           current: _currentTab,
-          onTap: (tab) => setState(() => _currentTab = tab),
+          onTap: _onNavTap,
           isJuror: _isJuror,
         ),
       ),

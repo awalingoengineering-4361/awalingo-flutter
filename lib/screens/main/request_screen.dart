@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
+import '../../widgets/word_request_tabs.dart';
 
 // ── Models ─────────────────────────────────────────────────────────────────────
 
@@ -61,6 +62,11 @@ class _RequestService {
     );
   }
 
+  Future<int> myRequestCount(String userId) async {
+    final rows = await _db.from('translation_requests').select('id').eq('userId', userId);
+    return rows.length;
+  }
+
   Future<void> submit({
     required String userId,
     required String word,
@@ -112,6 +118,7 @@ class _RequestScreenState extends State<RequestScreen> {
   bool _submitting = false;
   bool _submitted = false;
   _Bootstrap? _boot;
+  int? _requestCount;
 
   // true = English→Community, false = Community→English
   bool _engIsSource = true;
@@ -130,8 +137,13 @@ class _RequestScreenState extends State<RequestScreen> {
       return;
     }
     try {
-      final boot = await _service.bootstrap(userId);
-      if (mounted) setState(() { _boot = boot; _bootstrapping = false; });
+      final results = await Future.wait([
+        _service.bootstrap(userId),
+        _service.myRequestCount(userId),
+      ]);
+      final boot = results[0] as _Bootstrap;
+      final count = results[1] as int;
+      if (mounted) setState(() { _boot = boot; _requestCount = count; _bootstrapping = false; });
     } catch (e) {
       debugPrint('Request bootstrap error: $e');
       if (mounted) setState(() => _bootstrapping = false);
@@ -238,6 +250,12 @@ class _RequestScreenState extends State<RequestScreen> {
               ),
             ),
             Divider(height: 1, color: c.border),
+
+            if (!_bootstrapping && !_submitted)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                child: WordRequestTabs(activeIsHistory: false, requestCount: _requestCount),
+              ),
 
             if (_bootstrapping)
               Expanded(

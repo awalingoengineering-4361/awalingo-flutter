@@ -622,11 +622,16 @@ class _LangPill extends StatelessWidget {
 class VoteDetailScreen extends StatefulWidget {
   final int termId;
   final int communityLangId;
+  // Mirrors vote/page.tsx's isWordOfTheDay (searchParams.has('wordoftheday')):
+  // swaps the word card's label to "Word of the Day" when arriving from a
+  // WOTD_DAILY notification.
+  final bool isWordOfTheDay;
 
   const VoteDetailScreen({
     super.key,
     required this.termId,
     required this.communityLangId,
+    this.isWordOfTheDay = false,
   });
 
   @override
@@ -830,7 +835,9 @@ class _VoteDetailScreenState extends State<VoteDetailScreen> {
                                           color: Color(0xFFEAAB0B)),
                                       const SizedBox(width: 6),
                                       Text(
-                                        'Word to Vote On',
+                                        widget.isWordOfTheDay
+                                            ? 'Word of the Day'
+                                            : 'Word to Vote On',
                                         style: TextStyle(
                                           fontFamily: 'Metropolis',
                                           fontSize: 12,
