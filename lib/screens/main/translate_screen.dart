@@ -57,11 +57,23 @@ class _TranslateService {
   }
 
   Future<List<TermWithNeoCount>> loadTerms(int langId) async {
+    // Mirrors curateNeo.ts getTerms(): shuffle all term ids for the
+    // language and take 20, so Refresh actually surfaces a different set
+    // instead of the same deterministic page every time.
+    final idRows = await _db
+        .from('terms')
+        .select('id')
+        .eq('languageId', langId);
+    if (idRows.isEmpty) return [];
+
+    final randomIds = (idRows.map((r) => r['id'] as int).toList()..shuffle())
+        .take(20)
+        .toList();
+
     final termRows = await _db
         .from('terms')
         .select('id, text, meaning, partOfSpeech:part_of_speech!partOfSpeechId(name), concept:concepts!conceptId(gloss)')
-        .eq('languageId', langId)
-        .limit(20);
+        .inFilter('id', randomIds);
 
     if (termRows.isEmpty) return [];
 

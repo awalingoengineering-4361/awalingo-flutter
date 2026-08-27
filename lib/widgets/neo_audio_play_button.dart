@@ -8,7 +8,15 @@ import '../theme/app_theme.dart';
 // on play — pausing whichever other row is currently playing.
 class NeoAudioPlayButton extends StatefulWidget {
   final String? audioUrl;
-  const NeoAudioPlayButton({super.key, required this.audioUrl});
+  // Matches AudioPlayer.tsx's fromDickionaryCard prop: the dictionary
+  // context colors the icon #A30202 instead of the default foreground.
+  final bool fromDictionaryCard;
+
+  const NeoAudioPlayButton({
+    super.key,
+    required this.audioUrl,
+    this.fromDictionaryCard = false,
+  });
 
   @override
   State<NeoAudioPlayButton> createState() => _NeoAudioPlayButtonState();
@@ -63,12 +71,13 @@ class _NeoAudioPlayButtonState extends State<NeoAudioPlayButton> {
   Widget build(BuildContext context) {
     final c = AppColorScheme.of(context);
     final hasAudio = widget.audioUrl != null && widget.audioUrl!.isNotEmpty;
+    final activeColor = widget.fromDictionaryCard ? const Color(0xFFA30202) : c.foreground;
     return GestureDetector(
       onTap: hasAudio ? _toggle : null,
       child: Icon(
         _isPlaying ? Icons.pause_circle_outline : Icons.play_arrow,
         size: 22,
-        color: hasAudio ? c.foreground : c.mutedForeground.withValues(alpha: 0.4),
+        color: hasAudio ? activeColor : c.mutedForeground.withValues(alpha: 0.4),
       ),
     );
   }

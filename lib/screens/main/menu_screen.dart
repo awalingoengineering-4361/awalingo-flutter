@@ -9,6 +9,9 @@ import '../../widgets/bottom_nav.dart';
 import 'become_curator_screen.dart';
 import 'become_juror_screen.dart';
 import 'curator_requests_screen.dart';
+import 'dictionary_screen.dart';
+import 'my_word_requests_screen.dart';
+import 'request_screen.dart';
 
 // ── Models ────────────────────────────────────────────────────────────────────
 
@@ -383,7 +386,7 @@ class _MenuScreenState extends State<MenuScreen> {
                 wordColor: isDark
                     ? const Color(0xFFFAFAFA)
                     : const Color(0xFF111111),
-                onTap: () => widget.onNavigate?.call(NavTab.quiz),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DictionaryScreen())),
                 c: c,
                 isDark: isDark,
               ),
@@ -565,7 +568,12 @@ class _MenuScreenState extends State<MenuScreen> {
               wordColor: isDark
                   ? const Color(0xFFD8B4FE)
                   : const Color(0xFF6826AF),
-              onTap: () => Navigator.of(context).pushNamed('/request'),
+              onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const RequestScreen())),
+              secondaryLabel: 'My Word Requests',
+              secondaryIcon: Icons.checklist,
+              onSecondaryTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const MyWordRequestsScreen())),
               c: c,
               isDark: isDark,
             ),
@@ -753,6 +761,13 @@ class _CtaCard extends StatelessWidget {
   final VoidCallback onTap;
   final AppColorScheme c;
   final bool isDark;
+  // Only the 'request' variant in WordCtaCard.tsx has a secondary action
+  // (secondaryCtaText/onSecondaryClick) — when present, the card uses that
+  // variant's layout: pill-only header, then primary+secondary buttons
+  // stacked below the word, instead of the pill+button header row.
+  final String? secondaryLabel;
+  final IconData? secondaryIcon;
+  final VoidCallback? onSecondaryTap;
 
   const _CtaCard({
     required this.title,
@@ -769,10 +784,44 @@ class _CtaCard extends StatelessWidget {
     required this.onTap,
     required this.c,
     required this.isDark,
+    this.secondaryLabel,
+    this.secondaryIcon,
+    this.onSecondaryTap,
   });
+
+  Widget _buildPrimaryButton() {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFFFAFAFA) : const Color(0xFF111111),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        alignment: Alignment.center,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(buttonIcon, size: 15, color: isDark ? const Color(0xFF0A0A0A) : Colors.white),
+            const SizedBox(width: 6),
+            Text(
+              buttonLabel,
+              style: TextStyle(
+                fontFamily: 'Metropolis',
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: isDark ? const Color(0xFF0A0A0A) : Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (secondaryLabel != null) return _buildRequestVariant();
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -848,43 +897,7 @@ class _CtaCard extends StatelessWidget {
                           ),
                         ),
                       ),
-                      GestureDetector(
-                        onTap: onTap,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: isDark
-                                ? const Color(0xFFFAFAFA)
-                                : const Color(0xFF111111),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                buttonIcon,
-                                size: 15,
-                                color: isDark
-                                    ? const Color(0xFF0A0A0A)
-                                    : Colors.white,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                buttonLabel,
-                                style: TextStyle(
-                                  fontFamily: 'Metropolis',
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: isDark
-                                      ? const Color(0xFF0A0A0A)
-                                      : Colors.white,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
+                      _buildPrimaryButton(),
                     ],
                   ),
                   const SizedBox(height: 14),
@@ -895,6 +908,99 @@ class _CtaCard extends StatelessWidget {
                       fontSize: 22,
                       fontWeight: FontWeight.w300,
                       color: wordColor,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Matches WordCtaCard.tsx's 'request' variant: pill-only header (no
+  // button next to it), the word, then primary + secondary buttons
+  // stacked below (mobile order: primary above secondary, per the
+  // request card's `order-1`/`order-2` grid classes).
+  Widget _buildRequestVariant() {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: c.card,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: c.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.06),
+            blurRadius: 20,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: TextStyle(fontFamily: 'Parkinsans', fontSize: 17, fontWeight: FontWeight.w600, color: c.foreground)),
+                const SizedBox(height: 4),
+                Text(subtitle, style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: c.mutedForeground)),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: innerBg,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: innerBorder),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                    decoration: BoxDecoration(color: pillBg, borderRadius: BorderRadius.circular(100)),
+                    child: Text(ctaLabel,
+                        style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, fontWeight: FontWeight.w500, color: pillText)),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(word, style: TextStyle(fontFamily: 'Parkinsans', fontSize: 22, fontWeight: FontWeight.w300, color: wordColor)),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: onTap,
+                      icon: Icon(buttonIcon, size: 16),
+                      label: Text(buttonLabel, style: const TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isDark ? const Color(0xFFFAFAFA) : const Color(0xFF111111),
+                        foregroundColor: isDark ? const Color(0xFF0A0A0A) : Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        elevation: 0,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: onSecondaryTap,
+                      icon: Icon(secondaryIcon ?? Icons.list_alt, size: 16),
+                      label: Text(secondaryLabel!, style: const TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600)),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: c.foreground,
+                        side: BorderSide(color: c.border),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
                     ),
                   ),
                 ],

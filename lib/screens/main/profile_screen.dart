@@ -3,7 +3,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
 import '../../services/theme_notifier.dart';
-import 'language_setup_screen.dart';
 import 'privacy_settings_screen.dart';
 import 'legal_hub_screen.dart';
 
@@ -363,7 +362,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _GroupLabel('COMMUNITY', c: c),
                   _CommunityTile(
                     communityName: _data?.communityName,
-                    onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LanguageSetupScreen())),
                     c: c,
                     isDark: isDark,
                   ),
@@ -462,24 +460,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
 }
 
 // ── Community tile ─────────────────────────────────────────────────────────────
-// Shows the community name as a badge chip instead of a plain chevron.
+// Display-only, matching profile/page.tsx:399-425 exactly: that tile has no
+// onClick at all (just hover styling) — the community/target language is a
+// one-time onboarding choice in neolingo, never re-editable from Settings.
 
 class _CommunityTile extends StatelessWidget {
   final String? communityName;
-  final VoidCallback onTap;
   final AppColorScheme c;
   final bool isDark;
 
-  const _CommunityTile({required this.communityName, required this.onTap, required this.c, required this.isDark});
+  const _CommunityTile({required this.communityName, required this.c, required this.isDark});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
+      child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
             children: [
@@ -509,7 +505,6 @@ class _CommunityTile extends StatelessWidget {
             ],
           ),
         ),
-      ),
     );
   }
 }

@@ -68,7 +68,8 @@ class _AppMobileHeaderState extends State<AppMobileHeader> {
 
   String? _avatarUrl(User? user) {
     final meta = user?.userMetadata;
-    return (meta?['avatar_url'] as String?) ?? (meta?['picture'] as String?);
+    final url = (meta?['avatar_url'] as String?) ?? (meta?['picture'] as String?);
+    return (url != null && url.isNotEmpty) ? url : null;
   }
 
   // Converts a 2-letter ISO country code into its flag emoji, matching
@@ -225,27 +226,32 @@ class _AppMobileHeaderState extends State<AppMobileHeader> {
                 // Avatar button — matches neolingo's mobile MyCommunityTag:
                 // a circular photo (falls back to a generic icon), never
                 // the raw email.
-                GestureDetector(
-                  onTap: () => Navigator.of(context).pushNamed('/profile'),
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    clipBehavior: Clip.antiAlias,
-                    decoration: BoxDecoration(
-                      color: c.secondary,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: c.border),
+                Builder(builder: (context) {
+                  final avatarUrl = _avatarUrl(auth.user);
+                  final fallbackIcon = Icon(Icons.person_outline, size: 18, color: c.mutedForeground);
+                  return GestureDetector(
+                    onTap: () => Navigator.of(context).pushNamed('/profile'),
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      clipBehavior: Clip.antiAlias,
+                      decoration: BoxDecoration(
+                        color: c.secondary,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: c.border),
+                      ),
+                      child: avatarUrl != null
+                          ? Image.network(
+                              avatarUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) => fallbackIcon,
+                              loadingBuilder: (_, child, progress) =>
+                                  progress == null ? child : fallbackIcon,
+                            )
+                          : fallbackIcon,
                     ),
-                    child: _avatarUrl(auth.user) != null
-                        ? Image.network(
-                            _avatarUrl(auth.user)!,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) =>
-                                Icon(Icons.person_outline, size: 18, color: c.mutedForeground),
-                          )
-                        : Icon(Icons.person_outline, size: 18, color: c.mutedForeground),
-                  ),
-                ),
+                  );
+                }),
               ],
             ],
           ),

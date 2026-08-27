@@ -4,6 +4,10 @@ import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
+import '../../services/permissions.dart';
+import '../../widgets/curate_guard_modal.dart';
+import '../../widgets/neo_audio_play_button.dart';
+import 'translate_screen.dart';
 import 'vote_screen.dart';
 
 // ── Models ────────────────────────────────────────────────────────────────────
@@ -37,12 +41,14 @@ class NeoSuggestion {
   final String text;
   final String type;
   final int ratingScore;
+  final String? audioUrl;
 
   const NeoSuggestion({
     required this.id,
     required this.text,
     required this.type,
     this.ratingScore = 0,
+    this.audioUrl,
   });
 }
 
@@ -116,7 +122,7 @@ class _DictionaryService {
         .select(
           'id, text, meaning, phonics, conceptId, '
           'part_of_speech!partOfSpeechId(name), '
-          'neos!termId(id, text, type, ratingScore, languageId)',
+          'neos!termId(id, text, type, ratingScore, audioUrl, languageId)',
         )
         .eq('languageId', primaryId);
 
@@ -163,6 +169,7 @@ class _DictionaryService {
                 text: (n['text'] as String?) ?? '',
                 type: _neoTypeLabel((n['type'] as String?) ?? 'POPULAR'),
                 ratingScore: (n['ratingScore'] as int?) ?? 0,
+                audioUrl: n['audioUrl'] as String?,
               ))
           .toList()
         ..sort((a, b) => b.ratingScore.compareTo(a.ratingScore));
@@ -233,6 +240,7 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
   int? _communityLanguageId;
   int? _activeLanguageId;
   String _activeLanguage = 'community';
+  String? _role;
   String _communityName = '';
   String _communityShort = 'NEO';
 
@@ -297,15 +305,17 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
       final secondaryId =
           primaryId == ctx.engId ? ctx.communityId : (ctx.engId != 0 ? ctx.engId : ctx.communityId);
 
-      // Alphabets and first page of terms run in parallel
+      // Alphabets, first page of terms, and the user's role all run in parallel
       final results = await Future.wait([
         _service.getAlphabets(primaryId),
         _service.getTerms(primaryId, secondaryId, ctx.communityId, skip: 0, take: 20),
+        fetchUserRole(Supabase.instance.client, userId),
       ]);
 
       if (!mounted) return;
       final alphabets = results[0] as List<String>;
       final termsResult = results[1] as ({List<DictionaryTerm> terms, bool hasMore});
+      final role = results[2] as String?;
 
       setState(() {
         _englishLanguageId = ctx.engId != 0 ? ctx.engId : null;
@@ -317,12 +327,41 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
         _words = termsResult.terms;
         _hasMore = termsResult.hasMore;
         _skip = termsResult.terms.length;
+        _role = role;
         _bootstrapLoading = false;
       });
     } catch (e, stack) {
       debugPrint('Dictionary bootstrap error: $e');
       debugPrint(stack.toString());
       if (mounted) setState(() => _bootstrapLoading = false);
+    }
+  }
+
+  // Mirrors NeoDicoWord.tsx's goTosuggest(): curators/jurors/managers/admins
+  // go straight to the suggest form; explorers (take:quiz only) see the
+  // "Curator-in-waiting" guard prompting them to test in; everyone else
+  // just goes home.
+  void _onTranslate(DictionaryTerm term) {
+    if (hasPermission(_role, Permission.createNeos)) {
+      if (_communityLanguageId == null || _englishLanguageId == null || _activeLanguageId == null) return;
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => SuggestScreen(
+          term: TermWithNeoCount(
+            id: term.id,
+            text: term.text,
+            meaning: term.meaning,
+            partOfSpeech: term.partOfSpeech,
+            neoCount: term.neos.length,
+            languageId: _activeLanguageId!,
+          ),
+          communityLangId: _communityLanguageId!,
+          engLangId: _englishLanguageId!,
+        ),
+      ));
+    } else if (hasPermission(_role, Permission.takeQuiz)) {
+      showCurateGuardModal(context);
+    } else {
+      Navigator.of(context).popUntil((route) => route.isFirst);
     }
   }
 
@@ -609,7 +648,7 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
                 ));
               }
             },
-            onTranslate: () => _showSnack('Suggest translation coming soon'),
+            onTranslate: () => _onTranslate(term),
           );
         },
         childCount: terms.length,
@@ -765,14 +804,6 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
     );
   }
 
-  void _showSnack(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(message, style: const TextStyle(fontFamily: 'Metropolis')),
-      behavior: SnackBarBehavior.floating,
-      duration: const Duration(seconds: 2),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ));
-  }
 }
 
 // ── Word Card ─────────────────────────────────────────────────────────────────
@@ -1011,39 +1042,36 @@ class _WordCard extends StatelessWidget {
                 final i = entry.key;
                 final neo = entry.value;
                 final isLast = i == term.neos.length - 1;
+                // Matches SugesstionRow.tsx exactly: numbered index + text on
+                // the left, AudioPlayer (red, fromDickionaryCard) on the
+                // right — no type icon/badge/rating here, unlike vote/jury.
                 return Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   decoration: BoxDecoration(
                     border: isLast ? null : Border(bottom: BorderSide(color: c.border)),
                   ),
                   child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      _NeoTypeIcon(type: neo.type),
-                      const SizedBox(width: 8),
                       Expanded(
-                        child: Text(neo.text,
-                            style: TextStyle(fontFamily: 'Parkinsans', fontSize: 14, fontWeight: FontWeight.w500, color: c.foreground)),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: c.secondary,
-                          borderRadius: BorderRadius.circular(100),
-                        ),
-                        child: Text(neo.type,
-                            style: TextStyle(fontFamily: 'Metropolis', fontSize: 10, color: c.mutedForeground)),
-                      ),
-                      if (neo.ratingScore > 0) ...[
-                        const SizedBox(width: 8),
-                        Row(
+                        child: Row(
                           children: [
-                            const Icon(Icons.star_rounded, size: 12, color: Color(0xFFEAAB0B)),
-                            const SizedBox(width: 2),
-                            Text('${neo.ratingScore}',
-                                style: TextStyle(fontFamily: 'Metropolis', fontSize: 11, color: c.mutedForeground)),
+                            SizedBox(
+                              width: 20,
+                              child: Text(
+                                '${(i + 1).toString().padLeft(2, '0')}.',
+                                style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, color: c.mutedForeground),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(neo.text,
+                                  style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, fontWeight: FontWeight.w500, color: c.foreground)),
+                            ),
                           ],
                         ),
-                      ],
+                      ),
+                      NeoAudioPlayButton(audioUrl: neo.audioUrl, fromDictionaryCard: true),
                     ],
                   ),
                 );
@@ -1172,35 +1200,3 @@ class _AlphabetButton extends StatelessWidget {
   }
 }
 
-// ── Neo Type Icon ─────────────────────────────────────────────────────────────
-
-class _NeoTypeIcon extends StatelessWidget {
-  final String type;
-  const _NeoTypeIcon({required this.type});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = AppColorScheme.of(context);
-    IconData icon;
-    switch (type.toLowerCase()) {
-      case 'popular':
-        icon = Icons.star_outline;
-        break;
-      case 'adoptive':
-        icon = Icons.recycling;
-        break;
-      case 'functional':
-        icon = Icons.build_outlined;
-        break;
-      case 'root':
-        icon = Icons.park_outlined;
-        break;
-      case 'creative':
-        icon = Icons.psychology_outlined;
-        break;
-      default:
-        icon = Icons.circle_outlined;
-    }
-    return Icon(icon, size: 16, color: c.foreground80);
-  }
-}
