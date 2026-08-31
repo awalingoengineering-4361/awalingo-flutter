@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repository_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+  printf 'Run this command inside a Git repository.\n' >&2
+  exit 69
+}
+cd "$repository_root"
+
+printf '\n[1/3] Static analysis\n'
+flutter analyze --no-fatal-infos
+
+printf '\n[2/3] Automated tests\n'
+flutter test
+
+printf '\n[3/3] Android emulator verification\n'
+"$repository_root/scripts/verify-android-emulator"
+
+printf '\nChange verification passed.\n'

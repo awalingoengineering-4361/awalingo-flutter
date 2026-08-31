@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  printf 'Usage: %s <branch-slug>\n' "${0##*/}" >&2
+}
+
+if [[ "$#" -ne 1 ]]; then
+  usage
+  exit 64
+fi
+
+branch_slug="$1"
+if [[ "$branch_slug" == codex/* ]]; then
+  branch_name="$branch_slug"
+elif [[ "$branch_slug" == */* ]]; then
+  printf 'Branch slug must be unprefixed or use the codex/ prefix: %s\n' "$branch_slug" >&2
+  exit 64
+else
+  branch_name="codex/$branch_slug"
+fi
+
+if ! git check-ref-format --branch "$branch_name" >/dev/null 2>&1; then
+  printf 'Invalid branch name: %s\n' "$branch_name" >&2
+  exit 64
+fi
+
+repository_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+  printf 'Run this command inside a Git repository.\n' >&2
+  exit 69
+}
+cd "$repository_root"
+
+current_branch="$(git branch --show-current)"
+if [[ -z "$current_branch" ]]; then
+  printf 'Cannot start a change from a detached HEAD.\n' >&2
+  exit 65
+fi
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  printf 'Working tree is not clean. Commit, stash, or move the existing work before starting a new change.\n' >&2
+  exit 65
+fi
+
+if git show-ref --verify --quiet "refs/heads/$branch_name"; then
+  printf 'Local branch already exists: %s\n' "$branch_name" >&2
+  exit 65
+fi
+
+git switch -c "$branch_name"
+printf 'Started change on %s (base: %s).\n' "$branch_name" "$current_branch"

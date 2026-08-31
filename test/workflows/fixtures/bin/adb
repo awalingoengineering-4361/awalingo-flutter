@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+printf 'adb %s\n' "$*" >>"$AWALINGO_TEST_COMMAND_LOG"
+
+if [[ "${1:-}" == "devices" ]]; then
+  printf 'List of devices attached\n'
+  if [[ -f "$AWALINGO_TEST_DEVICE_STATE" ]]; then
+    printf 'emulator-5554\tdevice product:sdk_gphone model:Test_API_34 device:emu64\n'
+  fi
+  exit 0
+fi
+
+if [[ "${1:-}" == "-s" ]]; then
+  shift 2
+fi
+
+case "${1:-}" in
+  get-state)
+    printf 'device\n'
+    ;;
+  install)
+    printf 'Success\n'
+    ;;
+  exec-out)
+    printf 'fake png\n'
+    ;;
+  pull)
+    destination="${3:-}"
+    mkdir -p "$(dirname "$destination")"
+    printf '<hierarchy><node package="%s" text="Awalingo" /></hierarchy>\n' \
+      "${AWALINGO_TEST_UI_PACKAGE:-com.example.awalingo}" >"$destination"
+    ;;
+  logcat)
+    if [[ " $* " == *" -d "* ]]; then
+      printf '%s\n' "${AWALINGO_TEST_LOGCAT:-I/flutter: application started}"
+    fi
+    ;;
+  shell)
+    case " ${*:2} " in
+      *" getprop sys.boot_completed "*)
+        printf '1\n'
+        ;;
+      *" dumpsys activity activities "*)
+        printf 'topResumedActivity=ActivityRecord{123 %s/.MainActivity}\n' \
+          "${AWALINGO_TEST_FOREGROUND_PACKAGE:-com.example.awalingo}"
+        printf 'packageName=com.example.awalingo processName=com.example.awalingo\n'
+        ;;
+      *" am start -W "*)
+        printf 'Status: ok\n'
+        ;;
+      *" uiautomator dump "*)
+        printf 'UI hierarchy dumped\n'
+        ;;
+    esac
+    ;;
+esac
