@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repository_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+  printf 'Run this command inside a Git repository.\n' >&2
+  exit 69
+}
+cd "$repository_root"
+
+emulator_id="${AWALINGO_EMULATOR_ID:-Pixel_7_Pro_API_34}"
+app_id="${AWALINGO_APP_ID:-com.example.awalingo}"
+main_activity="${AWALINGO_MAIN_ACTIVITY:-.MainActivity}"
+timeout_seconds="${AWALINGO_EMULATOR_TIMEOUT_SECONDS:-180}"
+launch_wait_seconds="${AWALINGO_LAUNCH_WAIT_SECONDS:-5}"
+apk_path="${AWALINGO_APK_PATH:-$repository_root/build/app/outputs/flutter-apk/app-debug.apk}"
+artifact_dir="${AWALINGO_ARTIFACT_DIR:-$repository_root/build/verification/android-emulator}"
+
+resolve_adb() {
+  if [[ -n "${AWALINGO_ADB_BIN:-}" && -x "$AWALINGO_ADB_BIN" ]]; then
+    printf '%s\n' "$AWALINGO_ADB_BIN"
+  elif command -v adb >/dev/null 2>&1; then
+    command -v adb
+  elif [[ -n "${ANDROID_SDK_ROOT:-}" && -x "$ANDROID_SDK_ROOT/platform-tools/adb" ]]; then
+    printf '%s\n' "$ANDROID_SDK_ROOT/platform-tools/adb"
+  elif [[ -n "${ANDROID_HOME:-}" && -x "$ANDROID_HOME/platform-tools/adb" ]]; then
+    printf '%s\n' "$ANDROID_HOME/platform-tools/adb"
+  elif [[ -n "${HOME:-}" && -x "$HOME/Library/Android/sdk/platform-tools/adb" ]]; then
+    printf '%s\n' "$HOME/Library/Android/sdk/platform-tools/adb"
+  else
+    return 1
+  fi
+}
+
+adb_bin="$(resolve_adb)" || {
+  printf 'Android Debug Bridge was not found. Configure ANDROID_SDK_ROOT or install Android platform tools.\n' >&2
+  exit 69
+}
+
+mkdir -p "$artifact_dir"
+
+printf 'Building debug APK...\n'
+flutter build apk --debug
+if [[ ! -f "$apk_path" ]]; then
+  printf 'Debug APK was not produced at %s.\n' "$apk_path" >&2
+  exit 66
+fi
+
+find_emulator() {
+  "$adb_bin" devices | awk '$2 == "device" && $1 ~ /^emulator-/ { print $1; exit }'
+}
+
+device_serial="$(find_emulator)"
+if [[ -z "$device_serial" ]]; then
+  printf 'Launching Android emulator %s...\n' "$emulator_id"
+  flutter emulators --launch "$emulator_id"
+
+  deadline=$((SECONDS + timeout_seconds))
+  while [[ -z "$device_serial" && "$SECONDS" -lt "$deadline" ]]; do
+    sleep 2
+    device_serial="$(find_emulator)"
+  done
+
+  if [[ -z "$device_serial" ]]; then
+    printf 'Android emulator %s did not connect within %s seconds.\n' "$emulator_id" "$timeout_seconds" >&2
+    exit 70
+  fi
+fi
+
+printf 'Waiting for %s to finish booting...\n' "$device_serial"
+deadline=$((SECONDS + timeout_seconds))
+while [[ "$("$adb_bin" -s "$device_serial" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" != "1" ]]; do
+  if [[ "$SECONDS" -ge "$deadline" ]]; then
+    printf 'Android emulator %s did not finish booting within %s seconds.\n' "$device_serial" "$timeout_seconds" >&2
+    exit 70
+  fi
+  sleep 2
+done
+
+"$adb_bin" -s "$device_serial" shell input keyevent 82 >/dev/null
+
+printf 'Installing and launching %s...\n' "$app_id"
+"$adb_bin" -s "$device_serial" install -r "$apk_path" >/dev/null
+"$adb_bin" -s "$device_serial" logcat -c
+"$adb_bin" -s "$device_serial" shell am force-stop "$app_id"
+"$adb_bin" -s "$device_serial" shell am start -W -n "$app_id/$main_activity" >/dev/null
+
+if [[ "$launch_wait_seconds" -gt 0 ]]; then
+  sleep "$launch_wait_seconds"
+fi
+
+"$adb_bin" -s "$device_serial" shell dumpsys activity activities >"$artifact_dir/activity.txt"
+resumed_activity="$(grep -E -m 1 'topResumedActivity=|mResumedActivity:' "$artifact_dir/activity.txt" || true)"
+if [[ "$resumed_activity" != *"$app_id/"* && "$resumed_activity" != *"$app_id."* ]]; then
+  printf 'Awalingo is not the top-resumed activity. See %s/activity.txt.\n' "$artifact_dir" >&2
+  exit 1
+fi
+
+"$adb_bin" -s "$device_serial" exec-out screencap -p >"$artifact_dir/screenshot.png"
+if [[ ! -s "$artifact_dir/screenshot.png" ]]; then
+  printf 'Android did not return a screenshot.\n' >&2
+  exit 1
+fi
+
+remote_window_xml="/sdcard/awalingo-verification-window-$$.xml"
+"$adb_bin" -s "$device_serial" shell uiautomator dump "$remote_window_xml" >/dev/null
+"$adb_bin" -s "$device_serial" pull "$remote_window_xml" "$artifact_dir/window.xml" >/dev/null
+"$adb_bin" -s "$device_serial" logcat -d -t 1200 >"$artifact_dir/logcat.txt"
+
+if grep -q "package=\"$app_id\"" "$artifact_dir/window.xml"; then
+  printf 'UI hierarchy matches %s.\n' "$app_id" >"$artifact_dir/hierarchy-status.txt"
+else
+  printf 'UI hierarchy may be stale; foreground activity and screenshot remain authoritative.\n' \
+    >"$artifact_dir/hierarchy-status.txt"
+  printf 'Warning: Android returned a stale UI hierarchy; inspect screenshot.png instead.\n' >&2
+fi
+
+fatal_pattern='FATAL EXCEPTION|AndroidRuntime.*FATAL|Unhandled Exception|E/flutter.*(exception|error)|Lost connection to device|SIG(SEGV|ABRT)'
+fatal_log_lines="$(grep -Eni "$fatal_pattern" "$artifact_dir/logcat.txt" || true)"
+if [[ -n "$fatal_log_lines" ]]; then
+  printf '%s\n' "$fatal_log_lines" >"$artifact_dir/fatal-log-lines.txt"
+  printf 'Fatal runtime output detected. See %s/fatal-log-lines.txt.\n' "$artifact_dir" >&2
+  exit 1
+fi
+
+printf 'Android emulator verification passed on %s.\n' "$device_serial"
+printf 'Evidence: %s\n' "$artifact_dir"

@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+printf 'flutter %s\n' "$*" >>"$AWALINGO_TEST_COMMAND_LOG"
+
+if [[ "${1:-}" == "build" && "${2:-}" == "apk" ]]; then
+  mkdir -p "$(dirname "$AWALINGO_APK_PATH")"
+  printf 'fake apk\n' >"$AWALINGO_APK_PATH"
+fi
+
+if [[ "${1:-}" == "emulators" && "${2:-}" == "--launch" ]]; then
+  touch "$AWALINGO_TEST_DEVICE_STATE"
+fi

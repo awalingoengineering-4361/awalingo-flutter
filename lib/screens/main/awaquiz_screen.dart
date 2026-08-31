@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../features/awaquiz/awaquiz_mapper.dart';
+import '../../features/awaquiz/awaquiz_progression.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
 
 // ── Stage visual constants ──────────────────────────────────────────────────────
-
-const _kStageNames = ['JJC', 'Sabi Player', 'Shugaba', 'Odogwu', 'Idan', 'Ancestor'];
 
 const _kStageIcons = [
   Icons.extension_rounded,
@@ -63,46 +63,12 @@ const _kStageStyles = [
       accent: Color(0xFFB91C1C), buttonBg: Color(0xFFB91C1C)),
 ];
 
-// ── Domain models ───────────────────────────────────────────────────────────────
-
-enum _Difficulty { beginner, intermediate, advanced }
-
-extension _DifficultyX on _Difficulty {
-  String get dbValue => name.toUpperCase();
-  int get cowryCost => const [20, 30, 50][index];
-  int get secondsPerQuestion => const [30, 25, 20][index];
-  int get warningThreshold => this == _Difficulty.advanced ? 5 : 10;
-}
-
-_Difficulty? _diffFrom(String s) => switch (s.toUpperCase()) {
-      'BEGINNER' => _Difficulty.beginner,
-      'INTERMEDIATE' => _Difficulty.intermediate,
-      'ADVANCED' => _Difficulty.advanced,
-      _ => null,
-    };
-
-class _QuizLevel {
-  final int id;
-  final _Difficulty difficulty;
-  final int questionCount;
-  final int attemptCount;
-  final int stageIndex; // 0-based → maps to name/icon/style
-  final bool isUnlocked;
-
-  const _QuizLevel({
-    required this.id,
-    required this.difficulty,
-    required this.questionCount,
-    required this.attemptCount,
-    required this.stageIndex,
-    required this.isUnlocked,
-  });
-
-  int get _si => stageIndex.clamp(0, 5);
-  _StageStyle get style => _kStageStyles[_si];
-  String get stageName => _kStageNames[_si];
-  IconData get icon => _kStageIcons[_si];
-  int get stageNumber => stageIndex + 1;
+extension _AwaQuizStagePresentation on AwaQuizStage {
+  int get _styleIndex => (section - 1).clamp(0, _kStageStyles.length - 1);
+  _StageStyle get style => _kStageStyles[_styleIndex];
+  String get stageName => name;
+  IconData get icon => _kStageIcons[_styleIndex];
+  int get stageNumber => section;
 }
 
 class _QuizQuestion {
@@ -121,7 +87,7 @@ class _QuizQuestion {
 class _AwaQuizService {
   final _db = Supabase.instance.client;
 
-  Future<({List<_QuizLevel> levels, int cowryBalance})> loadLevels(
+  Future<AwaQuizOverview> loadOverview(
       String userId, int languageId) async {
     final setsRows = await _db
         .from('community_quiz_sets')
@@ -129,56 +95,41 @@ class _AwaQuizService {
         .eq('languageId', languageId)
         .eq('isActive', true);
 
-    final setIds = setsRows.map((r) => r['id'] as int).toList();
-    final attemptCounts = <int, int>{};
-    if (setIds.isNotEmpty) {
-      final rows = await _db
-          .from('community_quiz_attempts')
-          .select('setId')
-          .eq('userId', userId)
-          .inFilter('setId', setIds)
-          .not('submittedAt', 'is', null)
-          .gt('totalQuestions', 0); // early exits don't set totalQuestions
-      for (final r in rows) {
-        final sid = r['setId'] as int;
-        attemptCounts[sid] = (attemptCounts[sid] ?? 0) + 1;
-      }
-    }
-
-    final profile = await _db
+    final setIds = setsRows.map((row) => row['id'] as int).toList();
+    final attemptsFuture = _db
+        .from('community_quiz_attempts')
+        .select('section, score, totalQuestions, submittedAt')
+        .eq('userId', userId)
+        .eq('languageId', languageId)
+        .inFilter('section', const [1, 2, 3, 4, 5, 6]);
+    final profileFuture = _db
         .from('user_profile')
         .select('cowryBalance')
         .eq('userId', userId)
         .maybeSingle();
+    final questionRowsFuture = setIds.isEmpty
+        ? Future.value(const <Map<String, dynamic>>[])
+        : _db
+            .from('community_quiz_questions')
+            .select('setId')
+            .inFilter('setId', setIds)
+            .eq('isActive', true);
+    final (attempts, profile, questionRows) = await (
+      attemptsFuture,
+      profileFuture,
+      questionRowsFuture,
+    ).wait;
     final balance = (profile?['cowryBalance'] as int?) ?? 0;
 
-    final raw = setsRows
-        .map((r) {
-          final diff = _diffFrom(r['difficulty'] as String? ?? '');
-          if (diff == null) return null;
-          return (id: r['id'] as int, difficulty: diff, questionCount: (r['questionCount'] as int?) ?? 10);
-        })
-        .whereType<({int id, _Difficulty difficulty, int questionCount})>()
-        .toList()
-      ..sort((a, b) {
-        final dc = a.difficulty.index.compareTo(b.difficulty.index);
-        return dc != 0 ? dc : a.id.compareTo(b.id);
-      });
-
-    final levels = raw.asMap().entries.map((e) {
-      final idx = e.key;
-      final r = e.value;
-      return _QuizLevel(
-        id: r.id,
-        difficulty: r.difficulty,
-        questionCount: r.questionCount,
-        attemptCount: attemptCounts[r.id] ?? 0,
-        stageIndex: idx,
-        isUnlocked: idx == 0 || (attemptCounts[raw[idx - 1].id] ?? 0) > 0,
-      );
-    }).toList();
-
-    return (levels: levels, cowryBalance: balance);
+    return mapAwaQuizOverview(
+      setRows: setsRows,
+      questionSetIds: {
+        for (final row in questionRows)
+          if (row['setId'] case final int setId) setId,
+      },
+      attemptRows: attempts,
+      cowryBalance: balance,
+    );
   }
 
   Future<List<_QuizQuestion>> loadQuestions(int setId, int limit) async {
@@ -211,16 +162,23 @@ class _AwaQuizService {
   }
 
   Future<int> startAttempt({
-    required String userId, required int languageId, required int setId,
-    required _Difficulty difficulty, required int currentBalance, required int cowryCost,
+    required String userId,
+    required int languageId,
+    required AwaQuizStage stage,
+    required int currentBalance,
   }) async {
     await _db.from('user_profile')
-        .update({'cowryBalance': currentBalance - cowryCost}).eq('userId', userId);
-    final result = await _db.from('community_quiz_attempts').insert({
-      'userId': userId, 'languageId': languageId, 'setId': setId,
-      'difficulty': difficulty.dbValue, 'score': 0, 'totalQuestions': 0,
-      'entryCostCowries': cowryCost,
-    }).select('id').single();
+        .update({'cowryBalance': currentBalance - stage.difficulty.cowryCost})
+        .eq('userId', userId);
+    final result = await _db
+        .from('community_quiz_attempts')
+        .insert(buildAwaQuizAttemptInsert(
+          userId: userId,
+          languageId: languageId,
+          stage: stage,
+        ))
+        .select('id')
+        .single();
     return result['id'] as int;
   }
 
@@ -253,7 +211,7 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
   final _service = _AwaQuizService();
   bool _loading = true;
   String? _error;
-  List<_QuizLevel> _levels = [];
+  List<AwaQuizStage> _stages = [];
   int _cowryBalance = 0;
   int _languageId = 1;
   String _communityName = 'Community';
@@ -286,14 +244,25 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
         _communityName = (lang?['name'] as String?) ?? 'Community';
       }
 
-      final data = await _service.loadLevels(userId, _languageId);
-      if (mounted) setState(() { _levels = data.levels; _cowryBalance = data.cowryBalance; _loading = false; });
+      final data = await _service.loadOverview(userId, _languageId);
+      if (mounted) {
+        setState(() {
+          _stages = data.stages;
+          _cowryBalance = data.cowryBalance;
+          _loading = false;
+        });
+      }
     } catch (e) {
-      if (mounted) setState(() { _error = e.toString(); _loading = false; });
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _loading = false;
+        });
+      }
     }
   }
 
-  void _onLevelTap(_QuizLevel level) {
+  void _onLevelTap(AwaQuizStage level) {
     if (!level.isUnlocked) return;
     showModalBottomSheet(
       context: context,
@@ -308,12 +277,12 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
     );
   }
 
-  Future<void> _startQuiz(_QuizLevel level) async {
+  Future<void> _startQuiz(AwaQuizStage level) async {
     if (_cowryBalance < level.difficulty.cowryCost) return;
     final userId = AuthProvider.of(context).user?.id;
     if (userId == null) return;
     try {
-      final questions = await _service.loadQuestions(level.id, level.questionCount);
+      final questions = await _service.loadQuestions(level.setId, level.questionCount);
       if (questions.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -322,9 +291,8 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
         return;
       }
       final attemptId = await _service.startAttempt(
-        userId: userId, languageId: _languageId, setId: level.id,
-        difficulty: level.difficulty, currentBalance: _cowryBalance,
-        cowryCost: level.difficulty.cowryCost,
+        userId: userId, languageId: _languageId, stage: level,
+        currentBalance: _cowryBalance,
       );
       if (!mounted) return;
       await Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(
@@ -400,7 +368,7 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
                       ),
                       const SizedBox(height: 16),
 
-                      if (_levels.isEmpty)
+                      if (_stages.isEmpty)
                         Container(
                           padding: const EdgeInsets.all(24),
                           decoration: BoxDecoration(
@@ -415,7 +383,7 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
                           ),
                         )
                       else
-                        ..._levels.map((level) => Padding(
+                        ..._stages.map((level) => Padding(
                               padding: const EdgeInsets.only(bottom: 12),
                               child: _LevelCard(level: level, cowryBalance: _cowryBalance, onTap: () => _onLevelTap(level)),
                             )),
@@ -429,7 +397,7 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
 // ── Level Card ──────────────────────────────────────────────────────────────────
 
 class _LevelCard extends StatelessWidget {
-  final _QuizLevel level;
+  final AwaQuizStage level;
   final int cowryBalance;
   final VoidCallback onTap;
   const _LevelCard({required this.level, required this.cowryBalance, required this.onTap});
@@ -507,13 +475,15 @@ class _LevelCard extends StatelessWidget {
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
                                   Text(
-                                    '$attempts ${attempts == 1 ? 'attempt' : 'attempts'}',
+                                    level.isUnlocked
+                                        ? '$attempts ${attempts == 1 ? 'attempt' : 'attempts'}'
+                                        : 'Score 100% on ${level.previousStageName ?? 'the previous stage'}',
                                     style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, fontWeight: FontWeight.w500, color: st.accent),
                                   ),
                                   ElevatedButton.icon(
                                     onPressed: locked ? null : onTap,
-                                    icon: const Icon(Icons.rocket_launch_rounded, size: 14),
-                                    label: const Text('Play'),
+                                    icon: Icon(locked ? Icons.lock_rounded : Icons.rocket_launch_rounded, size: 14),
+                                    label: Text(locked ? 'Locked' : 'Play'),
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: st.buttonBg,
                                       foregroundColor: Colors.white,
@@ -547,7 +517,7 @@ class _LevelCard extends StatelessWidget {
 // ── Start Modal ─────────────────────────────────────────────────────────────────
 
 class _StartModal extends StatefulWidget {
-  final _QuizLevel level;
+  final AwaQuizStage level;
   final String communityName;
   final int cowryBalance;
   final VoidCallback onStart;
@@ -749,7 +719,7 @@ String _fmt(int s) => '${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
 
 class _QuizScreen extends StatefulWidget {
   final List<_QuizQuestion> questions;
-  final _QuizLevel level;
+  final AwaQuizStage level;
   final String communityName;
   final int attemptId;
   final _AwaQuizService service;
@@ -1094,7 +1064,7 @@ class _QuizScreenState extends State<_QuizScreen> {
 class _ResultScreen extends StatefulWidget {
   final int score;
   final int total;
-  final _QuizLevel level;
+  final AwaQuizStage level;
   final String communityName;
   final List<({_QuizQuestion question, String? selectedAnswer})> missed;
   const _ResultScreen({required this.score, required this.total, required this.level, required this.communityName, required this.missed});
