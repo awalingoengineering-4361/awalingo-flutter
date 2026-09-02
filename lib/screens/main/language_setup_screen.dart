@@ -25,7 +25,7 @@ class _LanguageSetupScreenState extends State<LanguageSetupScreen> {
   Future<void> _load() async {
     final userId = _db.auth.currentUser?.id;
     try {
-      final langRows = await _db.from('languages').select('id, name').order('name');
+      final langRows = await _db.from('languages').select('id, name').order('name', ascending: true);
       final langs = (langRows as List).map((r) => (id: r['id'] as int, name: r['name'] as String)).toList();
 
       int? currentId;

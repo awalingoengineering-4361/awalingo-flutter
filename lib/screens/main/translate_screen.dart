@@ -155,7 +155,11 @@ class _TranslateService {
 
 // ─── Translation Lounge Screen ────────────────────────────────────────────────
 class TranslateScreen extends StatefulWidget {
-  const TranslateScreen({super.key});
+  // Matches CurationLoungeClient.tsx's back arrow (handleGoBack). Optional
+  // because this screen also serves as a bottom-nav tab body with no route
+  // to pop.
+  final VoidCallback? onBack;
+  const TranslateScreen({super.key, this.onBack});
 
   @override
   State<TranslateScreen> createState() => _TranslateScreenState();
@@ -242,6 +246,24 @@ class _TranslateScreenState extends State<TranslateScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               child: Row(
                 children: [
+                  GestureDetector(
+                    onTap: () {
+                      if (Navigator.canPop(context)) {
+                        Navigator.of(context).pop();
+                      } else {
+                        widget.onBack?.call();
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: c.secondary,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(Icons.arrow_back, size: 20, color: c.foreground),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       'Translation Lounge',

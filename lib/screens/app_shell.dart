@@ -23,6 +23,7 @@ class _AppShellState extends State<AppShell> {
   bool _isJuror = false;
   String? _role;
   bool _roleLoaded = false;
+  Future<void>? _roleFuture;
   // Nested navigator for the Menu tab so sub-pages (AwaQuiz level picker, etc.)
   // remain inside the shell and keep the top/bottom nav visible.
   final _menuNavKey = GlobalKey<NavigatorState>();
@@ -32,7 +33,7 @@ class _AppShellState extends State<AppShell> {
     super.didChangeDependencies();
     if (!_roleLoaded) {
       _roleLoaded = true;
-      _fetchRole();
+      _roleFuture = _fetchRole();
     }
   }
 
@@ -50,15 +51,22 @@ class _AppShellState extends State<AppShell> {
   // Mirrors BottomNavigation.tsx's Translate nav item: without create:neos
   // permission, tapping it never reaches the terms list — it shows the
   // Curator-in-waiting guard (or, in the unreachable edge case where the
-  // user also lacks take:quiz, just falls back to the Menu tab).
-  void _onNavTap(NavTab tab) {
-    if (tab == NavTab.translate && !hasPermission(_role, Permission.createNeos)) {
-      if (!hasPermission(_role, Permission.takeQuiz)) {
-        setState(() => _currentTab = NavTab.menu);
-      } else {
-        showCurateGuardModal(context);
+  // user also lacks take:quiz, just falls back to the Menu tab). The nav
+  // bar is tappable before the role fetch resolves, so this awaits it
+  // first — otherwise a curator tapping Translate right at launch could
+  // briefly see the guard meant for explorers.
+  Future<void> _onNavTap(NavTab tab) async {
+    if (tab == NavTab.translate) {
+      if (!_roleLoaded || _role == null) await _roleFuture;
+      if (!mounted) return;
+      if (!hasPermission(_role, Permission.createNeos)) {
+        if (!hasPermission(_role, Permission.takeQuiz)) {
+          setState(() => _currentTab = NavTab.menu);
+        } else {
+          showCurateGuardModal(context);
+        }
+        return;
       }
-      return;
     }
     setState(() => _currentTab = tab);
   }
@@ -68,9 +76,9 @@ class _AppShellState extends State<AppShell> {
       case NavTab.quiz:
         return const AwaQuizScreen();
       case NavTab.vote:
-        return VoteScreen(isJuror: _isJuror);
+        return VoteScreen(isJuror: _isJuror, onBack: () => _onNavTap(NavTab.menu));
       case NavTab.translate:
-        return const TranslateScreen();
+        return TranslateScreen(onBack: () => _onNavTap(NavTab.menu));
       case NavTab.menu:
         // Nested Navigator: sub-pages pushed here stay within the shell so the
         // top/bottom nav remains visible. The active quiz uses rootNavigator:true

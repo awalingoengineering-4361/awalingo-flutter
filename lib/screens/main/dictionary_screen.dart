@@ -10,6 +10,37 @@ import '../../widgets/neo_audio_play_button.dart';
 import 'translate_screen.dart';
 import 'vote_screen.dart';
 
+// Postgres's default collation naturally sorts an accented letter (e.g. 'Á')
+// right next to its base letter ('A') — that's why getAvailableAlphabets on
+// the web needs no special handling. Dart's plain String.compareTo has no
+// locale/collation awareness (raw UTF-16 code-unit order), which pushes
+// accented Latin letters — and this app's community languages use several,
+// e.g. Yoruba's dotted vowels/consonants — off to the end, after 'Z'. This
+// maps each to its base letter as a sort key while keeping the accented
+// letter itself as its own distinct alphabet entry.
+const Map<String, String> _diacriticBaseLetters = {
+  'À': 'A', 'Á': 'A', 'Â': 'A', 'Ã': 'A', 'Ä': 'A', 'Å': 'A', 'Ā': 'A', 'Ă': 'A',
+  'È': 'E', 'É': 'E', 'Ê': 'E', 'Ë': 'E', 'Ē': 'E', 'Ĕ': 'E', 'Ẹ': 'E', 'Ẽ': 'E',
+  'Ì': 'I', 'Í': 'I', 'Î': 'I', 'Ï': 'I', 'Ī': 'I', 'Ĭ': 'I',
+  'Ò': 'O', 'Ó': 'O', 'Ô': 'O', 'Õ': 'O', 'Ö': 'O', 'Ō': 'O', 'Ŏ': 'O', 'Ọ': 'O',
+  'Ù': 'U', 'Ú': 'U', 'Û': 'U', 'Ü': 'U', 'Ū': 'U', 'Ŭ': 'U',
+  'Ñ': 'N', 'Ń': 'N', 'Ǹ': 'N',
+  'Ç': 'C', 'Ć': 'C', 'Č': 'C',
+  'Ś': 'S', 'Š': 'S', 'Ṣ': 'S',
+  'Ý': 'Y', 'Ÿ': 'Y',
+  'Ź': 'Z', 'Ž': 'Z',
+  'Ğ': 'G', 'Ǧ': 'G',
+  'Ł': 'L',
+};
+
+String _alphabetSortKey(String letter) => _diacriticBaseLetters[letter] ?? letter;
+
+int _compareAlphabetLetters(String a, String b) {
+  final baseCompare = _alphabetSortKey(a).compareTo(_alphabetSortKey(b));
+  if (baseCompare != 0) return baseCompare;
+  return a.compareTo(b);
+}
+
 // ── Models ────────────────────────────────────────────────────────────────────
 
 class DictionaryTerm {
@@ -58,6 +89,7 @@ typedef _UserContext = ({int engId, int communityId, String name, String short})
 
 class _DictionaryService {
   final SupabaseClient _db = Supabase.instance.client;
+  final Map<int, List<String>> _alphabetCache = {};
 
   /// Single parallel query: English language ID + user's community language info.
   Future<_UserContext?> bootstrapUserContext(String userId) async {
@@ -90,20 +122,41 @@ class _DictionaryService {
   }
 
   /// Distinct first-letters for the alphabet sidebar.
+  // No DB function available, so this paginates through every term in
+  // batches instead of one capped fetch — no hardcoded ceiling, so it can't
+  // truncate regardless of how many terms exist, and it derives letters
+  // from real data (works for the community language's own script, not
+  // just A-Z). Costs more round-trips than a DB-side DISTINCT would, but
+  // each page only selects the `text` column and stops as soon as a page
+  // comes back short (end of data).
   Future<List<String>> getAlphabets(int languageId) async {
+    final cached = _alphabetCache[languageId];
+    if (cached != null) return cached;
+
+    const pageSize = 1000;
+    final letters = <String>{};
     try {
-      final rows = await _db
-          .from('terms')
-          .select('text')
-          .eq('languageId', languageId);
-      final letters = <String>{};
-      for (final row in rows) {
-        final text = (row['text'] as String?) ?? '';
-        if (text.isNotEmpty) letters.add(text[0].toUpperCase());
+      var offset = 0;
+      while (true) {
+        final rows = await _db
+            .from('terms')
+            .select('text')
+            .eq('languageId', languageId)
+            .order('text', ascending: true)
+            .range(offset, offset + pageSize - 1);
+        for (final row in rows) {
+          final text = (row['text'] as String?) ?? '';
+          if (text.isNotEmpty) letters.add(text[0].toUpperCase());
+        }
+        if (rows.length < pageSize) break;
+        offset += pageSize;
       }
-      return letters.toList()..sort();
+      final result = letters.toList()..sort(_compareAlphabetLetters);
+      _alphabetCache[languageId] = result;
+      return result;
     } catch (_) {
-      return [];
+      // Don't cache a failed/partial fetch — worth retrying next time.
+      return letters.toList()..sort(_compareAlphabetLetters);
     }
   }
 
@@ -132,7 +185,7 @@ class _DictionaryService {
       query = query.ilike('text', '$alphabet%');
     }
 
-    final res = await query.order('text').range(skip, skip + take);
+    final res = await query.order('text', ascending: true).range(skip, skip + take);
     final hasMore = res.length > take;
     final page = hasMore ? res.sublist(0, take) : res;
 
@@ -667,6 +720,10 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
         border: Border.all(color: c.border),
       ),
       child: SingleChildScrollView(
+        // Resets scroll position on language switch — without this, the
+        // scroll offset carries over from the previous tab's (possibly
+        // longer) letter list, which can leave "A" scrolled out of view.
+        key: ValueKey(_activeLanguage),
         child: Column(
           children: [
             // "All" button
@@ -1186,7 +1243,9 @@ class _AlphabetButton extends StatelessWidget {
         ),
         child: Center(
           child: Text(
-            label,
+            // Matches DictionaryClient.tsx:699-701 — {letter}{letter.toLocaleLowerCase()},
+            // e.g. "Aa". The "All" button (isFirst) keeps its own glyph as-is.
+            isFirst ? label : '$label${label.toLowerCase()}',
             style: TextStyle(
               fontFamily: 'Metropolis',
               fontSize: isFirst ? 14 : 11,
