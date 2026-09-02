@@ -56,9 +56,10 @@ bool hasPermission(String? role, String permission) =>
     rolePermissions[role]?.contains(permission) ?? false;
 
 /// Reads the caller's role name (e.g. 'CURATOR') the same way every screen
-/// already does: `user_roles` joined to `roles`. Returns null if the user
-/// has no role row (treat as no permissions, same as neolingo's default).
-Future<String?> fetchUserRole(SupabaseClient db, String userId) async {
+/// already does: `user_roles` joined to `roles`. Mirrors getUserRole()
+/// (server-auth.ts:39-42): defaults to 'EXPLORER' when the user has no role
+/// row, since that's the implicit default role, not "no permissions at all".
+Future<String> fetchUserRole(SupabaseClient db, String userId) async {
   final row = await db
       .from('user_roles')
       .select('role:roles!roleId(name)')
@@ -66,5 +67,5 @@ Future<String?> fetchUserRole(SupabaseClient db, String userId) async {
       .limit(1)
       .maybeSingle();
   final role = row?['role'] as Map<String, dynamic>?;
-  return role?['name'] as String?;
+  return (role?['name'] as String?) ?? 'EXPLORER';
 }

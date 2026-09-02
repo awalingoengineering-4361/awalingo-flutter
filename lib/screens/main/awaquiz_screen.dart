@@ -194,6 +194,72 @@ class _AwaQuizService {
       'submittedAt': DateTime.now().toUtc().toIso8601String(),
     }).eq('id', attemptId);
   }
+
+  static const reviewCostCowries = 10;
+
+  Future<int> currentCowryBalance(String userId) async {
+    final row = await _db.from('user_profile').select('cowryBalance').eq('userId', userId).maybeSingle();
+    return (row?['cowryBalance'] as int?) ?? 0;
+  }
+
+  // Mirrors unlockCommunityQuizReview (community-quiz.ts:993): idempotent
+  // (won't re-charge if already unlocked), charges via a cowry_ledger entry
+  // rather than a direct balance write, since the ledger sum is the source
+  // of truth everywhere else in the app.
+  Future<({bool success, bool alreadyUnlocked, bool insufficientCowries, String? error, int cowryBalance})>
+      unlockReview(int attemptId, String userId) async {
+    final attempt = await _db
+        .from('community_quiz_attempts')
+        .select('score, totalQuestions, reviewUnlockedAt')
+        .eq('id', attemptId)
+        .eq('userId', userId)
+        .maybeSingle();
+
+    if (attempt == null) {
+      return (success: false, alreadyUnlocked: false, insufficientCowries: false, error: 'This AwaQuiz result is unavailable.', cowryBalance: 0);
+    }
+    final score = attempt['score'] as int? ?? 0;
+    final total = attempt['totalQuestions'] as int? ?? 0;
+    if (score >= total) {
+      return (success: false, alreadyUnlocked: false, insufficientCowries: false, error: 'This AwaQuiz has no mistakes.', cowryBalance: 0);
+    }
+    if (attempt['reviewUnlockedAt'] != null) {
+      return (success: true, alreadyUnlocked: true, insufficientCowries: false, error: null, cowryBalance: 0);
+    }
+
+    final balance = await currentCowryBalance(userId);
+    if (balance < reviewCostCowries) {
+      return (
+        success: false, alreadyUnlocked: false, insufficientCowries: true,
+        error: 'You need $reviewCostCowries cowries to reveal your mistakes.',
+        cowryBalance: balance,
+      );
+    }
+
+    final updated = await _db
+        .from('community_quiz_attempts')
+        .update({'reviewCostCowries': reviewCostCowries, 'reviewUnlockedAt': DateTime.now().toUtc().toIso8601String()})
+        .eq('id', attemptId)
+        .eq('userId', userId)
+        .filter('reviewUnlockedAt', 'is', null)
+        .select('id');
+    if ((updated as List).isEmpty) {
+      // Lost the race to a concurrent unlock — don't charge twice.
+      return (success: true, alreadyUnlocked: true, insufficientCowries: false, error: null, cowryBalance: 0);
+    }
+
+    await _db.from('cowry_ledger').insert({
+      'userId': userId,
+      'eventType': 'AWAQUIZ_REVIEW_UNLOCK',
+      'description': 'AwaQuiz attempt $attemptId mistake review',
+      'cowry_changed': -reviewCostCowries,
+    });
+    final ledgerRows = await _db.from('cowry_ledger').select('cowry_changed').eq('userId', userId);
+    final newBalance = (ledgerRows as List).fold<int>(0, (sum, r) => sum + (r['cowry_changed'] as int));
+    await _db.from('user_profile').update({'cowryBalance': newBalance}).eq('userId', userId);
+
+    return (success: true, alreadyUnlocked: false, insufficientCowries: false, error: null, cowryBalance: newBalance);
+  }
 }
 
 // ── Level Picker Screen ─────────────────────────────────────────────────────────
@@ -795,6 +861,7 @@ class _QuizScreenState extends State<_QuizScreen> {
       builder: (_) => _ResultScreen(
         score: score, total: widget.questions.length,
         level: widget.level, communityName: widget.communityName, missed: missed,
+        attemptId: widget.attemptId, service: widget.service,
       ),
     ));
   }
@@ -1067,7 +1134,13 @@ class _ResultScreen extends StatefulWidget {
   final AwaQuizStage level;
   final String communityName;
   final List<({_QuizQuestion question, String? selectedAnswer})> missed;
-  const _ResultScreen({required this.score, required this.total, required this.level, required this.communityName, required this.missed});
+  final int attemptId;
+  final _AwaQuizService service;
+  const _ResultScreen({
+    required this.score, required this.total, required this.level,
+    required this.communityName, required this.missed,
+    required this.attemptId, required this.service,
+  });
 
   @override
   State<_ResultScreen> createState() => _ResultScreenState();
@@ -1075,9 +1148,131 @@ class _ResultScreen extends StatefulWidget {
 
 class _ResultScreenState extends State<_ResultScreen> {
   bool _showMissed = false;
+  bool _reviewUnlocked = false;
 
   int get _pct => widget.total > 0 ? ((widget.score / widget.total) * 100).round() : 0;
   bool get _isPerfect => widget.score == widget.total && widget.total > 0;
+
+  // Mirrors getReviewButtonLabel (result/page.tsx:29-39).
+  String get _reviewButtonLabel {
+    if (_showMissed) return 'Hide My Mistake';
+    if (_reviewUnlocked) return 'Show My Mistake';
+    return 'Show My Mistake · ${_AwaQuizService.reviewCostCowries} Cowries';
+  }
+
+  // Mirrors handleReviewToggle (result/page.tsx:103-116).
+  void _handleReviewToggle() {
+    if (_showMissed) {
+      setState(() => _showMissed = false);
+      return;
+    }
+    if (_reviewUnlocked) {
+      setState(() => _showMissed = true);
+      return;
+    }
+    _openPurchaseModal();
+  }
+
+  Future<void> _openPurchaseModal() async {
+    final userId = AuthProvider.of(context).user?.id;
+    if (userId == null) return;
+    int balance = 0;
+    try {
+      balance = await widget.service.currentCowryBalance(userId);
+    } catch (_) {}
+    if (!mounted) return;
+    final c = AppColorScheme.of(context);
+    bool isUnlocking = false;
+    String? error;
+    final missedCount = widget.missed.length;
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setModalState) => Dialog(
+          backgroundColor: c.card,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 72, height: 72,
+                  decoration: BoxDecoration(color: c.secondary, shape: BoxShape.circle),
+                  child: const Center(child: Text('🐚', style: TextStyle(fontSize: 32))),
+                ),
+                const SizedBox(height: 16),
+                Text('Reveal your mistakes?',
+                    style: TextStyle(fontFamily: 'Parkinsans', fontSize: 18, fontWeight: FontWeight.w600, color: c.foreground)),
+                const SizedBox(height: 10),
+                Text(
+                  'See your $missedCount ${missedCount == 1 ? 'mistake' : 'mistakes'} for ${_AwaQuizService.reviewCostCowries} Cowries. '
+                  'This charge only applies once to this result.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: c.mutedForeground),
+                ),
+                const SizedBox(height: 8),
+                Text('Balance: $balance Cowries',
+                    style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, fontWeight: FontWeight.w600, color: c.foreground)),
+                if (error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(error!, textAlign: TextAlign.center,
+                      style: const TextStyle(fontFamily: 'Metropolis', fontSize: 12, color: Color(0xFFDC2626))),
+                ],
+                const SizedBox(height: 20),
+                Row(children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: isUnlocking ? null : () => Navigator.pop(dialogContext),
+                      style: OutlinedButton.styleFrom(
+                          shape: const StadiumBorder(), foregroundColor: c.foreground,
+                          side: BorderSide(color: c.border), padding: const EdgeInsets.symmetric(vertical: 14)),
+                      child: const Text('Cancel', style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: isUnlocking
+                          ? null
+                          : () async {
+                              setModalState(() { isUnlocking = true; error = null; });
+                              try {
+                                final result = await widget.service.unlockReview(widget.attemptId, userId);
+                                if (!result.success && !result.alreadyUnlocked) {
+                                  setModalState(() {
+                                    isUnlocking = false;
+                                    error = result.error;
+                                    if (result.insufficientCowries) balance = result.cowryBalance;
+                                  });
+                                  return;
+                                }
+                                if (dialogContext.mounted) Navigator.pop(dialogContext);
+                                if (mounted) setState(() { _reviewUnlocked = true; _showMissed = true; });
+                              } catch (e) {
+                                debugPrint('unlockReview failed: $e');
+                                setModalState(() {
+                                  isUnlocking = false;
+                                  error = 'Failed to reveal your mistakes. Please try again.';
+                                });
+                              }
+                            },
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: c.foreground, foregroundColor: c.background,
+                          shape: const StadiumBorder(), padding: const EdgeInsets.symmetric(vertical: 14), elevation: 0),
+                      child: Text(isUnlocking ? 'Revealing...' : 'Pay ${_AwaQuizService.reviewCostCowries} Cowries',
+                          style: const TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                ]),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1208,13 +1403,13 @@ class _ResultScreenState extends State<_ResultScreen> {
             if (widget.missed.isNotEmpty) ...[
               const SizedBox(height: 16),
               GestureDetector(
-                onTap: () => setState(() => _showMissed = !_showMissed),
+                onTap: _handleReviewToggle,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(color: c.card, borderRadius: BorderRadius.circular(16), border: Border.all(color: c.border)),
                   child: Row(children: [
                     Expanded(
-                      child: Text(_showMissed ? 'Hide My Mistakes' : 'Show My Mistakes',
+                      child: Text(_reviewButtonLabel,
                           style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600, fontSize: 14, color: c.foreground)),
                     ),
                     Icon(_showMissed ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, color: c.mutedForeground),

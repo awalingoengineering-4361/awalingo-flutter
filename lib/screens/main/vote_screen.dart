@@ -78,36 +78,93 @@ class _VoteService {
     );
   }
 
+  // Ports curateNeo.ts getTerms(languageId, userId, 'vote', targetLanguageId)
+  // exactly: candidate neos must be net-positive-rated and not yet
+  // juror-rated by this user; deferred terms sort last (only affects which
+  // 20 make the cut, not final display order); terms the user has already
+  // voted on (any neo) are excluded entirely; final order is by each term's
+  // oldest qualifying neo's createdAt ascending, not alphabetical.
   Future<List<_VotingTerm>> loadTerms(int neoLangId) async {
-    final neoRows = await _db
-        .from('neos')
-        .select('termId, ratingCount, rejectCount')
-        .eq('languageId', neoLangId)
-        .gt('ratingCount', 0);
+    final userId = _db.auth.currentUser?.id;
+    if (userId == null) return [];
 
-    final validTermIds = neoRows
-        .where((n) =>
-            (n['rejectCount'] as int? ?? 0) < (n['ratingCount'] as int? ?? 0))
-        .map((n) => n['termId'] as int)
-        .toSet()
-        .toList();
+    final results = await Future.wait([
+      _db
+          .from('neos')
+          .select('id, termId, ratingCount, rejectCount, createdAt')
+          .eq('languageId', neoLangId)
+          .gt('ratingCount', 0),
+      _db.from('neo_rating').select('neoId').eq('userId', userId),
+      _db
+          .from('defered_term')
+          .select('termId')
+          .eq('userId', userId)
+          .eq('deferType', 'vote'),
+      _db.from('votes').select('termId').eq('userId', userId),
+    ]);
+    final neoRows = results[0];
+    final ratedNeoIds = results[1].map((r) => r['neoId'] as int).toSet();
+    final deferredTermIds = results[2].map((r) => r['termId'] as int).toSet();
+    final votedTermIds = results[3].map((r) => r['termId'] as int).toSet();
 
-    if (validTermIds.isEmpty) return [];
+    final qualifyingNeos = neoRows.where((n) {
+      if (ratedNeoIds.contains(n['id'] as int)) return false;
+      final ratingCount = n['ratingCount'] as int? ?? 0;
+      final rejectCount = n['rejectCount'] as int? ?? 0;
+      return rejectCount < ratingCount;
+    }).toList();
+    if (qualifyingNeos.isEmpty) return [];
+
+    final seen = <int>{};
+    final candidateTermIds = <int>[];
+    for (final n in qualifyingNeos) {
+      final termId = n['termId'] as int;
+      if (seen.add(termId)) candidateTermIds.add(termId);
+    }
+
+    final undeferred = candidateTermIds.where((id) => !deferredTermIds.contains(id));
+    final deferred = candidateTermIds.where((id) => deferredTermIds.contains(id));
+    final capped = [...undeferred, ...deferred].take(20).toSet();
+
+    final finalIds = capped.where((id) => !votedTermIds.contains(id)).toList();
+    if (finalIds.isEmpty) return [];
 
     final termRows = await _db
         .from('terms')
         .select('id, text, meaning, partOfSpeech:part_of_speech!partOfSpeechId(name)')
-        .inFilter('id', validTermIds);
+        .inFilter('id', finalIds);
 
-    return termRows.map((r) {
+    final earliestByTerm = <int, DateTime>{};
+    for (final n in qualifyingNeos) {
+      final termId = n['termId'] as int;
+      if (!finalIds.contains(termId)) continue;
+      final created = DateTime.tryParse(n['createdAt'] as String? ?? '');
+      if (created == null) continue;
+      final existing = earliestByTerm[termId];
+      if (existing == null || created.isBefore(existing)) {
+        earliestByTerm[termId] = created;
+      }
+    }
+
+    final byId = {for (final r in termRows) r['id'] as int: r};
+    final terms = finalIds.where(byId.containsKey).map((id) {
+      final r = byId[id]!;
       final pos = r['partOfSpeech'] as Map<String, dynamic>?;
       return _VotingTerm(
-        id: r['id'] as int,
+        id: id,
         text: r['text'] as String,
         meaning: r['meaning'] as String? ?? '',
         partOfSpeech: pos?['name'] as String? ?? '',
       );
     }).toList();
+
+    terms.sort((a, b) {
+      final ta = earliestByTerm[a.id];
+      final tb = earliestByTerm[b.id];
+      if (ta == null || tb == null) return 0;
+      return ta.compareTo(tb);
+    });
+    return terms;
   }
 
   Future<List<_VotingTerm>> loadTermsForJury({
@@ -266,7 +323,7 @@ class _VoteDetailService {
 
   Future<void> deferVote(String userId, int termId) async {
     try {
-      await _db.from('defered_terms').upsert({
+      await _db.from('defered_term').upsert({
         'userId': userId,
         'termId': termId,
         'deferType': 'vote',
@@ -308,7 +365,10 @@ class _VoteDetailService {
 // ─── Voting Lounge Screen ─────────────────────────────────────────────────────
 class VoteScreen extends StatefulWidget {
   final bool isJuror;
-  const VoteScreen({super.key, this.isJuror = false});
+  // Matches LoungeClient.tsx's back arrow (handleGoBack). Optional because
+  // this screen also serves as a bottom-nav tab body with no route to pop.
+  final VoidCallback? onBack;
+  const VoteScreen({super.key, this.isJuror = false, this.onBack});
 
   @override
   State<VoteScreen> createState() => _VoteScreenState();
@@ -392,6 +452,24 @@ class _VoteScreenState extends State<VoteScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               child: Row(
                 children: [
+                  GestureDetector(
+                    onTap: () {
+                      if (Navigator.canPop(context)) {
+                        Navigator.of(context).pop();
+                      } else {
+                        widget.onBack?.call();
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: c.secondary,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(Icons.arrow_back, size: 20, color: c.foreground),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       widget.isJuror ? 'Jury Lounge' : 'Voting Lounge',
@@ -763,40 +841,27 @@ class _VoteDetailScreenState extends State<VoteDetailScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // ── Header ───────────────────────────────────────────────────
+            // ── Header — back button only, matches vote/page.tsx:185-196
+            // (the word itself only appears in the word card body below) ──
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              child: Stack(
-                alignment: Alignment.center,
+              child: Row(
                 children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: GestureDetector(
-                      onTap: () => Navigator.of(context).pop(),
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: c.secondary,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(Icons.arrow_back,
-                            size: 20, color: c.foreground),
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: c.secondary,
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                    ),
-                  ),
-                  Text(
-                    _term?.text ?? '',
-                    style: TextStyle(
-                      fontFamily: 'Parkinsans',
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: c.foreground,
+                      child: Icon(Icons.arrow_back,
+                          size: 20, color: c.foreground),
                     ),
                   ),
                 ],
               ),
             ),
-            Divider(height: 1, color: c.border),
 
             Expanded(
               child: _loading
@@ -1510,41 +1575,28 @@ class _JuryDetailScreenState extends State<JuryDetailScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // ── Header ───────────────────────────────────────────────────
+            // ── Header — back button only, matches JuryClient.tsx:249-259
+            // (the word itself only appears in the word card body below) ──
             Padding(
               padding:
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              child: Stack(
-                alignment: Alignment.center,
+              child: Row(
                 children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: GestureDetector(
-                      onTap: () => Navigator.of(context).pop(),
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: c.secondary,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(Icons.arrow_back,
-                            size: 20, color: c.foreground),
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: c.secondary,
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                    ),
-                  ),
-                  Text(
-                    _term?.text ?? '',
-                    style: TextStyle(
-                      fontFamily: 'Parkinsans',
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: c.foreground,
+                      child: Icon(Icons.arrow_back,
+                          size: 20, color: c.foreground),
                     ),
                   ),
                 ],
               ),
             ),
-            Divider(height: 1, color: c.border),
 
             Expanded(
               child: _loading
