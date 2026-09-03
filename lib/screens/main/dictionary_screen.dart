@@ -7,6 +7,7 @@ import '../../services/auth_provider.dart';
 import '../../services/permissions.dart';
 import '../../widgets/curate_guard_modal.dart';
 import '../../widgets/neo_audio_play_button.dart';
+import 'request_screen.dart';
 import 'translate_screen.dart';
 import 'vote_screen.dart';
 
@@ -638,7 +639,7 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
       child: TextField(
         controller: _searchController,
         onChanged: _onSearchChanged,
-        style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, color: c.foreground),
+        style: TextStyle(fontFamily: 'Metropolis', fontFamilyFallback: kContentFontFallback, fontSize: 14, color: c.foreground),
         decoration: InputDecoration(
           hintText: placeholder,
           hintStyle: TextStyle(fontFamily: 'Metropolis', fontSize: 14, color: c.mutedForeground),
@@ -841,7 +842,8 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
   Widget _buildFloatingButton() {
     final c = AppColorScheme.of(context);
     return GestureDetector(
-      onTap: () => Navigator.of(context).pushNamed('/request'),
+      onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const RequestScreen())),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
@@ -914,6 +916,7 @@ class _WordCard extends StatelessWidget {
                         term.text,
                         style: TextStyle(
                           fontFamily: 'Metropolis',
+                          fontFamilyFallback: kContentFontFallback,
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
                           color: c.foreground,
@@ -951,11 +954,12 @@ class _WordCard extends StatelessWidget {
                             onTap: onTranslationTap,
                             child: Text(
                               term.translation!,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontFamily: 'Metropolis',
+                                fontFamilyFallback: kContentFontFallback,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w500,
-                                color: Color(0xFF6B3FA0),
+                                color: const Color(0xFF6B3FA0),
                                 decoration: TextDecoration.underline,
                                 decorationStyle: TextDecorationStyle.dashed,
                               ),
@@ -967,6 +971,7 @@ class _WordCard extends StatelessWidget {
                           text: term.translation ?? '—',
                           style: TextStyle(
                             fontFamily: 'Metropolis',
+                            fontFamilyFallback: kContentFontFallback,
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
                             color: c.foreground80,
@@ -981,6 +986,7 @@ class _WordCard extends StatelessWidget {
                   term.partOfSpeech,
                   style: TextStyle(
                     fontFamily: 'Metropolis',
+                    fontFamilyFallback: kContentFontFallback,
                     fontSize: 11,
                     fontStyle: FontStyle.italic,
                     color: c.mutedForeground,
@@ -990,7 +996,7 @@ class _WordCard extends StatelessWidget {
                 // Definition
                 Text(
                   term.meaning,
-                  style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: c.foreground80, height: 1.5),
+                  style: TextStyle(fontFamily: 'Metropolis', fontFamilyFallback: kContentFontFallback, fontSize: 13, color: c.foreground80, height: 1.5),
                 ),
               ],
             ),
@@ -1123,7 +1129,7 @@ class _WordCard extends StatelessWidget {
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(neo.text,
-                                  style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, fontWeight: FontWeight.w500, color: c.foreground)),
+                                  style: TextStyle(fontFamily: 'Metropolis', fontFamilyFallback: kContentFontFallback, fontSize: 14, fontWeight: FontWeight.w500, color: c.foreground)),
                             ),
                           ],
                         ),

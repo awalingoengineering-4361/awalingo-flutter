@@ -273,7 +273,7 @@ class _RequestTile extends StatelessWidget {
         Row(children: [
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(request.word, style: TextStyle(fontFamily: 'Parkinsans', fontSize: 17, fontWeight: FontWeight.w600, color: c.foreground)),
+              Text(request.word, style: TextStyle(fontFamily: 'Parkinsans', fontFamilyFallback: kContentFontFallback, fontSize: 17, fontWeight: FontWeight.w600, color: c.foreground)),
               const SizedBox(height: 2),
               Text('${request.languageName} • ${_timeAgo(request.createdAt)}',
                   style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, color: c.mutedForeground)),

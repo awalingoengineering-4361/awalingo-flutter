@@ -421,7 +421,7 @@ class _RequestCard extends StatelessWidget {
                       spacing: 8,
                       runSpacing: 4,
                       children: [
-                        Text(request.word, style: TextStyle(fontFamily: 'Parkinsans', fontSize: 16, fontWeight: FontWeight.w600, color: c.foreground)),
+                        Text(request.word, style: TextStyle(fontFamily: 'Parkinsans', fontFamilyFallback: kContentFontFallback, fontSize: 16, fontWeight: FontWeight.w600, color: c.foreground)),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(color: c.secondary, borderRadius: BorderRadius.circular(100)),
@@ -450,7 +450,7 @@ class _RequestCard extends StatelessWidget {
 
           if ((request.meaning ?? '').isNotEmpty) ...[
             const SizedBox(height: 12),
-            Text(request.meaning!, style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, color: c.foreground.withValues(alpha: 0.85))),
+            Text(request.meaning!, style: TextStyle(fontFamily: 'Metropolis', fontFamilyFallback: kContentFontFallback, fontSize: 14, color: c.foreground.withValues(alpha: 0.85))),
           ],
 
           const SizedBox(height: 12),

@@ -218,7 +218,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(height: 14),
                   Text(
                     displayName,
-                    style: TextStyle(fontFamily: 'Parkinsans', fontSize: 20, fontWeight: FontWeight.w600, color: c.foreground),
+                    style: TextStyle(fontFamily: 'Parkinsans', fontFamilyFallback: kContentFontFallback, fontSize: 20, fontWeight: FontWeight.w600, color: c.foreground),
                   ),
                   const SizedBox(height: 4),
                   Text(

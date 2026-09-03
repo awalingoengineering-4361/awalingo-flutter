@@ -66,3 +66,16 @@ flutter:
           weight: 600
         - asset: assets/fonts/Metropolis-Bold.otf
           weight: 700
+
+    # Fallback for glyphs Parkinsans/Metropolis don't have: Yoruba's dotted
+    # consonants/vowels (Ọ, Ṣ) and combining tone marks. Neither of the two
+    # brand fonts covers these — Metropolis has zero combining-mark glyphs
+    # at all — so without an explicit, controlled fallback, Skia silently
+    # substitutes some other font per-glyph, and a combining mark rendered
+    # via a different font than its base letter doesn't line up with that
+    # letter's actual metrics, which is what caused diacritics to visually
+    # detach/jump. Applied via fontFamilyFallback on dictionary/term/neo
+    # content text specifically, not app UI chrome.
+    - family: NotoSans
+      fonts:
+        - asset: assets/fonts/NotoSans-Regular.ttf

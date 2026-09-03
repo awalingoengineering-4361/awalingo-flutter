@@ -916,6 +916,7 @@ class _VoteDetailScreenState extends State<VoteDetailScreen> {
                                     _term!.text,
                                     style: TextStyle(
                                       fontFamily: 'Parkinsans',
+                                      fontFamilyFallback: kContentFontFallback,
                                       fontSize: 26,
                                       fontWeight: FontWeight.w700,
                                       color: c.foreground,
@@ -935,6 +936,7 @@ class _VoteDetailScreenState extends State<VoteDetailScreen> {
                                         _term!.partOfSpeech,
                                         style: TextStyle(
                                             fontFamily: 'Metropolis',
+                                            fontFamilyFallback: kContentFontFallback,
                                             fontSize: 11,
                                             color: c.mutedForeground),
                                       ),
@@ -944,6 +946,7 @@ class _VoteDetailScreenState extends State<VoteDetailScreen> {
                                     _term!.meaning,
                                     style: TextStyle(
                                       fontFamily: 'Metropolis',
+                                      fontFamilyFallback: kContentFontFallback,
                                       fontSize: 14,
                                       color: c.mutedForeground,
                                       height: 1.5,
@@ -1119,6 +1122,7 @@ class _NeoRow extends StatelessWidget {
               neo.text,
               style: TextStyle(
                 fontFamily: 'Metropolis',
+                fontFamilyFallback: kContentFontFallback,
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
                 color: c.foreground,
@@ -1649,6 +1653,7 @@ class _JuryDetailScreenState extends State<JuryDetailScreen> {
                                     _term!.text,
                                     style: TextStyle(
                                       fontFamily: 'Parkinsans',
+                                      fontFamilyFallback: kContentFontFallback,
                                       fontSize: 26,
                                       fontWeight: FontWeight.w700,
                                       color: c.foreground,
@@ -1668,6 +1673,7 @@ class _JuryDetailScreenState extends State<JuryDetailScreen> {
                                         _term!.partOfSpeech,
                                         style: TextStyle(
                                             fontFamily: 'Metropolis',
+                                            fontFamilyFallback: kContentFontFallback,
                                             fontSize: 11,
                                             color: c.mutedForeground),
                                       ),
@@ -1677,6 +1683,7 @@ class _JuryDetailScreenState extends State<JuryDetailScreen> {
                                     _term!.meaning,
                                     style: TextStyle(
                                       fontFamily: 'Metropolis',
+                                      fontFamilyFallback: kContentFontFallback,
                                       fontSize: 14,
                                       color: c.mutedForeground,
                                       height: 1.5,
@@ -1854,6 +1861,7 @@ class _JuryNeoRow extends StatelessWidget {
                   neo.text,
                   style: TextStyle(
                     fontFamily: 'Metropolis',
+                    fontFamilyFallback: kContentFontFallback,
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                     color: c.foreground,

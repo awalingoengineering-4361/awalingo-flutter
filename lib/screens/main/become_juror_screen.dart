@@ -3,16 +3,68 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
 import '../../services/permissions.dart';
+import '../../widgets/neo_audio_play_button.dart';
 
 // ── Models ────────────────────────────────────────────────────────────────────
 
-class _PracticeNeo {
+class _PracticeSuggestion {
   final int id;
   final String text;
   final String type;
-  final String termText;
-  final String termMeaning;
-  const _PracticeNeo({required this.id, required this.text, required this.type, required this.termText, required this.termMeaning});
+  final String? audioUrl;
+  const _PracticeSuggestion({required this.id, required this.text, required this.type, this.audioUrl});
+}
+
+class _PracticeTerm {
+  final int id;
+  final String text;
+  final String? phonics;
+  final String partOfSpeech;
+  final String meaning;
+  final bool isFallback;
+  final List<_PracticeSuggestion> suggestions;
+  const _PracticeTerm({
+    required this.id, required this.text, this.phonics, required this.partOfSpeech,
+    required this.meaning, required this.isFallback, required this.suggestions,
+  });
+}
+
+// Mirrors juror-applications.ts's FALLBACK_PRACTICE_TERM exactly — shown
+// when the user's community has no jury-eligible candidates at all.
+const _fallbackPracticeTerm = _PracticeTerm(
+  id: 0,
+  text: 'Bookmark',
+  phonics: '/ˈbʊkmɑːk/',
+  partOfSpeech: 'noun',
+  meaning: 'a piece of thick paper, leather, or plastic that you put between '
+      'the pages of a book so that you can find a page again quickly.',
+  isFallback: true,
+  suggestions: [
+    _PracticeSuggestion(id: -1, text: 'Bookuumarrkiiiii', type: 'POPULAR'),
+    _PracticeSuggestion(id: -2, text: 'Bookuumarrkiiiii', type: 'ADOPTIVE'),
+    _PracticeSuggestion(id: -3, text: 'Bookuumarrkiiiii', type: 'FUNCTIONAL'),
+    _PracticeSuggestion(id: -4, text: 'Bookuumarrkiiiii', type: 'CREATIVE'),
+  ],
+);
+
+const _practiceTypeIcons = <String, IconData>{
+  'POPULAR': Icons.star_outline,
+  'ADOPTIVE': Icons.recycling,
+  'FUNCTIONAL': Icons.build_outlined,
+  'ROOT': Icons.park_outlined,
+  'CREATIVE': Icons.psychology_outlined,
+};
+
+// Mirrors getStableUserIndex (juror-applications.ts:94-105) exactly: a
+// deterministic per-user hash so the same curator always lands on the same
+// practice term across reloads, instead of a fresh random one each time.
+int _stableUserIndex(String userId, int size) {
+  if (size <= 0) return 0;
+  var hash = 0;
+  for (final codeUnit in userId.codeUnits) {
+    hash = (hash * 31 + codeUnit) & 0xFFFFFFFF;
+  }
+  return hash % size;
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -20,34 +72,125 @@ class _PracticeNeo {
 class _BecomeJurorService {
   final SupabaseClient _db = Supabase.instance.client;
 
-  Future<_PracticeNeo?> loadPracticeNeo(String userId) async {
+  // Mirrors getPracticeTermForUser (juror-applications.ts:107-159): builds
+  // jury-eligible candidates in both directions (English terms needing
+  // community-language neos, and vice versa), rotates them starting from a
+  // stable per-user index, and returns the first candidate that actually
+  // has neo suggestions — falling back to the canned joke term otherwise.
+  Future<_PracticeTerm> loadPracticeTerm(String userId) async {
     final utl = await _db.from('user_target_languages').select('languageId').eq('userId', userId).maybeSingle();
-    final langId = utl?['languageId'] as int?;
-    if (langId == null) return null;
+    final communityId = utl?['languageId'] as int?;
+    if (communityId == null) return _fallbackPracticeTerm;
 
-    // Get a neo to practice rating
+    final results = await Future.wait([
+      _loadJuryTerms(languageId: 1, targetLanguageId: communityId, userId: userId),
+      _loadJuryTerms(languageId: communityId, targetLanguageId: 1, userId: userId),
+    ]);
+    final candidates = [
+      for (final t in results[0]) (term: t, suggestionLanguageId: communityId),
+      for (final t in results[1]) (term: t, suggestionLanguageId: 1),
+    ];
+    if (candidates.isEmpty) return _fallbackPracticeTerm;
+
+    final start = _stableUserIndex(userId, candidates.length);
+    final ordered = [...candidates.sublist(start), ...candidates.sublist(0, start)];
+
+    for (final candidate in ordered) {
+      final suggestions = await _loadJuryNeosForTerm(
+        termId: candidate.term.id,
+        neoLangId: candidate.suggestionLanguageId,
+        userId: userId,
+      );
+      if (suggestions.isEmpty) continue;
+      return _PracticeTerm(
+        id: candidate.term.id,
+        text: candidate.term.text,
+        phonics: candidate.term.phonics,
+        partOfSpeech: candidate.term.partOfSpeech,
+        meaning: candidate.term.meaning.isNotEmpty ? candidate.term.meaning : 'No definition available.',
+        isFallback: false,
+        suggestions: suggestions.take(4).toList(),
+      );
+    }
+    return _fallbackPracticeTerm;
+  }
+
+  // Mirrors getTerms(languageId, userId, 'jury', targetLanguageId): terms
+  // whose language is `languageId` that have at least one qualifying neo
+  // (rejectCount<3, not this user's own, not already rated by this user)
+  // in `targetLanguageId`.
+  Future<List<({int id, String text, String? phonics, String partOfSpeech, String meaning})>> _loadJuryTerms({
+    required int languageId,
+    required int targetLanguageId,
+    required String userId,
+  }) async {
     final neoRows = await _db
         .from('neos')
-        .select('id, text, type, termId')
-        .eq('languageId', langId)
+        .select('id, termId')
+        .eq('languageId', targetLanguageId)
         .neq('userId', userId)
-        .gt('ratingCount', 0)
-        .limit(10);
+        .lt('rejectCount', 3);
+    if (neoRows.isEmpty) return [];
 
-    if (neoRows.isEmpty) return null;
-    neoRows.shuffle();
-    final neo = neoRows.first;
-    final termId = neo['termId'] as int;
+    final neoIds = neoRows.map((r) => r['id'] as int).toList();
+    final ratedRows = await _db.from('neo_rating').select('neoId').eq('userId', userId).inFilter('neoId', neoIds);
+    final ratedNeoIds = ratedRows.map((r) => r['neoId'] as int).toSet();
 
-    final termRow = await _db.from('terms').select('text, meaning').eq('id', termId).maybeSingle();
+    final validTermIds = neoRows
+        .where((n) => !ratedNeoIds.contains(n['id'] as int))
+        .map((n) => n['termId'] as int)
+        .toSet()
+        .toList();
+    if (validTermIds.isEmpty) return [];
 
-    return _PracticeNeo(
-      id: neo['id'] as int,
-      text: neo['text'] as String,
-      type: neo['type'] as String? ?? 'POPULAR',
-      termText: termRow?['text'] as String? ?? '',
-      termMeaning: termRow?['meaning'] as String? ?? '',
-    );
+    final termRows = await _db
+        .from('terms')
+        .select('id, text, phonics, meaning, partOfSpeech:part_of_speech!partOfSpeechId(name)')
+        .eq('languageId', languageId)
+        .inFilter('id', validTermIds);
+
+    return termRows.map((r) {
+      final pos = r['partOfSpeech'] as Map<String, dynamic>?;
+      return (
+        id: r['id'] as int,
+        text: r['text'] as String,
+        phonics: r['phonics'] as String?,
+        partOfSpeech: pos?['name'] as String? ?? 'noun',
+        meaning: r['meaning'] as String? ?? '',
+      );
+    }).toList();
+  }
+
+  // Mirrors getTermNeos(termId, false, userId, neoLangId, 'jury'): neos for
+  // this term/language not created by this user, rejectCount<3, and not
+  // already rated by this user.
+  Future<List<_PracticeSuggestion>> _loadJuryNeosForTerm({
+    required int termId,
+    required int neoLangId,
+    required String userId,
+  }) async {
+    final rows = await _db
+        .from('neos')
+        .select('id, text, type, audioUrl')
+        .eq('termId', termId)
+        .eq('languageId', neoLangId)
+        .neq('userId', userId)
+        .lt('rejectCount', 3);
+    if (rows.isEmpty) return [];
+
+    final neoIds = rows.map((r) => r['id'] as int).toList();
+    final ratedRows = await _db.from('neo_rating').select('neoId').eq('userId', userId).inFilter('neoId', neoIds);
+    final ratedNeoIds = ratedRows.map((r) => r['neoId'] as int).toSet();
+
+    return rows
+        .where((r) => !ratedNeoIds.contains(r['id'] as int))
+        .map((r) => _PracticeSuggestion(
+              id: r['id'] as int,
+              text: r['text'] as String,
+              type: r['type'] as String? ?? 'POPULAR',
+              audioUrl: r['audioUrl'] as String?,
+            ))
+        .toList();
   }
 
   Future<bool> hasExistingApplication(String userId) async {
@@ -66,13 +209,15 @@ class _BecomeJurorService {
     return (name: name, email: authUser?.email);
   }
 
+  // Mirrors submitJurorApplication's actual persisted fields exactly
+  // (juror-applications.ts:249-257) — practice ratings are a client-side
+  // gate only and are never written to juror_applications; those columns
+  // don't exist on the table.
   Future<void> submitApplication({
     required String userId,
     required String name,
     required String email,
     required String phone,
-    required int? practiceNeoId,
-    required int? practiceRating,
   }) async {
     await _db.from('juror_applications').upsert({
       'userId': userId,
@@ -81,8 +226,6 @@ class _BecomeJurorService {
       'phone': phone,
       'agreementAccepted': true,
       'status': 'PENDING',
-      if (practiceNeoId != null) 'practiceNeoId': practiceNeoId,
-      if (practiceRating != null) 'practiceRating': practiceRating,
     }, onConflict: 'userId');
   }
 }
@@ -102,8 +245,8 @@ class _BecomeJurorScreenState extends State<BecomeJurorScreen> {
   bool _submitting = false;
   int _step = 0; // 0 = practice, 1 = form, 2 = done
 
-  _PracticeNeo? _practiceNeo;
-  int? _practiceRating;
+  _PracticeTerm? _practiceTerm;
+  final Map<int, int> _ratings = {};
   bool _alreadyApplied = false;
 
   // Mirrors neolingo's requireCuratorApplicant(): only CURATORs may view or
@@ -153,11 +296,11 @@ class _BecomeJurorScreenState extends State<BecomeJurorScreen> {
       }
 
       final results = await Future.wait([
-        _service.loadPracticeNeo(userId),
+        _service.loadPracticeTerm(userId),
         _service.hasExistingApplication(userId),
         _service.prefillFromProfile(userId),
       ]);
-      final neo = results[0] as _PracticeNeo?;
+      final term = results[0] as _PracticeTerm;
       final hasApp = results[1] as bool;
       final prefill = results[2] as ({String? name, String? email});
 
@@ -166,7 +309,7 @@ class _BecomeJurorScreenState extends State<BecomeJurorScreen> {
         _emailCtrl.text = prefill.email ?? '';
         setState(() {
           _isCurator = true;
-          _practiceNeo = neo;
+          _practiceTerm = term;
           _alreadyApplied = hasApp;
           _loading = false;
         });
@@ -196,8 +339,6 @@ class _BecomeJurorScreenState extends State<BecomeJurorScreen> {
         name: _nameCtrl.text.trim(),
         email: _emailCtrl.text.trim(),
         phone: _phoneCtrl.text.trim(),
-        practiceNeoId: _practiceNeo?.id,
-        practiceRating: _practiceRating,
       );
       if (mounted) setState(() { _step = 2; _submitting = false; });
     } catch (e) {
@@ -233,11 +374,11 @@ class _BecomeJurorScreenState extends State<BecomeJurorScreen> {
               ? _AlreadyAppliedView(c: c)
               : _step == 0
                   ? _PracticeStep(
-                      neo: _practiceNeo,
-                      rating: _practiceRating,
+                      term: _practiceTerm,
+                      ratings: _ratings,
                       emojis: _emojis,
                       c: c,
-                      onRate: (v) => setState(() => _practiceRating = v),
+                      onRate: (suggestionId, v) => setState(() => _ratings[suggestionId] = v),
                       onContinue: () => setState(() => _step = 1),
                     )
                   : _step == 1
@@ -260,80 +401,108 @@ class _BecomeJurorScreenState extends State<BecomeJurorScreen> {
 // ── Practice Step ─────────────────────────────────────────────────────────────
 
 class _PracticeStep extends StatelessWidget {
-  final _PracticeNeo? neo;
-  final int? rating;
+  final _PracticeTerm? term;
+  final Map<int, int> ratings;
   final List<({String char, String label, int value})> emojis;
   final AppColorScheme c;
-  final ValueChanged<int> onRate;
+  final void Function(int suggestionId, int value) onRate;
   final VoidCallback onContinue;
 
-  const _PracticeStep({required this.neo, required this.rating, required this.emojis, required this.c, required this.onRate, required this.onContinue});
+  const _PracticeStep({
+    required this.term, required this.ratings, required this.emojis,
+    required this.c, required this.onRate, required this.onContinue,
+  });
 
   @override
   Widget build(BuildContext context) {
+    // Mirrors PracticeStep in become-juror/page.tsx: enabled once the user
+    // has rated at least one suggestion, not all of them.
+    final hasInteracted = ratings.isNotEmpty;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: c.secondary, borderRadius: BorderRadius.circular(12), border: Border.all(color: c.border)),
-            child: Row(children: [
-              Icon(Icons.info_outline, size: 18, color: c.mutedForeground),
-              const SizedBox(width: 10),
-              Expanded(child: Text('Step 1 of 2 — Practice Rating\nRate this neo suggestion to demonstrate your judgment.',
-                  style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, color: c.mutedForeground))),
-            ]),
-          ),
-          const SizedBox(height: 16),
+          Text('How would you rate these translations below?',
+              style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, fontWeight: FontWeight.w500, color: c.foreground)),
+          const SizedBox(height: 12),
 
-          if (neo != null) ...[
+          if (term != null) ...[
             // Term card
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(color: c.card, borderRadius: BorderRadius.circular(12), border: Border.all(color: c.border)),
+              decoration: BoxDecoration(
+                color: const Color(0xFFECFEFF),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFA5F3FC)),
+              ),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Word to translate', style: TextStyle(fontFamily: 'Metropolis', fontSize: 11, fontWeight: FontWeight.w600, color: c.mutedForeground, letterSpacing: 0.5)),
-                const SizedBox(height: 6),
-                Text(neo!.termText, style: TextStyle(fontFamily: 'Parkinsans', fontSize: 20, fontWeight: FontWeight.w600, color: c.foreground)),
-                if (neo!.termMeaning.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(neo!.termMeaning, style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: c.mutedForeground)),
-                ],
+                Text(term!.text, style: TextStyle(fontFamily: 'Parkinsans', fontFamilyFallback: kContentFontFallback, fontSize: 20, fontWeight: FontWeight.w600, color: c.foreground)),
+                const SizedBox(height: 4),
+                Wrap(spacing: 6, children: [
+                  if ((term!.phonics ?? '').isNotEmpty)
+                    Text(term!.phonics!, style: TextStyle(fontFamily: 'Metropolis', fontFamilyFallback: kContentFontFallback, fontSize: 12, color: c.mutedForeground)),
+                  Text('• ${term!.partOfSpeech}', style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, color: c.mutedForeground)),
+                ]),
+                const SizedBox(height: 10),
+                Text(term!.meaning, style: TextStyle(fontFamily: 'Metropolis', fontFamilyFallback: kContentFontFallback, fontSize: 13, color: c.foreground.withValues(alpha: 0.85))),
               ]),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
 
-            // Neo to rate
+            // Up to 4 practice suggestions, each independently rated.
             Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(color: c.card, borderRadius: BorderRadius.circular(12), border: Border.all(color: c.border)),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Community suggestion', style: TextStyle(fontFamily: 'Metropolis', fontSize: 11, fontWeight: FontWeight.w600, color: c.mutedForeground, letterSpacing: 0.5)),
-                const SizedBox(height: 6),
-                Text(neo!.text, style: TextStyle(fontFamily: 'Parkinsans', fontSize: 22, fontWeight: FontWeight.w600, color: c.foreground)),
-                const SizedBox(height: 16),
-                Text('How would you rate this suggestion?', style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: c.mutedForeground)),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: emojis.map((e) => GestureDetector(
-                    onTap: () => onRate(e.value),
-                    child: AnimatedScale(
-                      scale: rating == e.value ? 1.3 : 1.0,
-                      duration: const Duration(milliseconds: 150),
-                      child: Column(children: [
-                        Text(e.char, style: const TextStyle(fontSize: 28)),
-                        const SizedBox(height: 4),
-                        Text(e.label, style: TextStyle(fontFamily: 'Metropolis', fontSize: 10, color: c.mutedForeground)),
-                      ]),
+              decoration: BoxDecoration(
+                color: c.card,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: c.border),
+              ),
+              child: Column(
+                children: term!.suggestions.asMap().entries.map((entry) {
+                  final isLast = entry.key == term!.suggestions.length - 1;
+                  final s = entry.value;
+                  final myRating = ratings[s.id];
+                  return Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      border: isLast ? null : Border(bottom: BorderSide(color: c.border)),
                     ),
-                  )).toList(),
-                ),
-              ]),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Row(children: [
+                        Icon(_practiceTypeIcons[s.type] ?? Icons.circle_outlined, size: 18, color: c.foreground),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(s.text,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontFamily: 'Metropolis', fontFamilyFallback: kContentFontFallback, fontSize: 15, color: c.foreground)),
+                        ),
+                        NeoAudioPlayButton(audioUrl: s.audioUrl),
+                      ]),
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: emojis.map((e) => GestureDetector(
+                          onTap: () => onRate(s.id, e.value),
+                          child: AnimatedScale(
+                            scale: myRating == e.value ? 1.25 : 1.0,
+                            duration: const Duration(milliseconds: 150),
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: myRating == e.value ? c.secondary : Colors.transparent,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text(e.char, style: const TextStyle(fontSize: 24)),
+                            ),
+                          ),
+                        )).toList(),
+                      ),
+                    ]),
+                  );
+                }).toList(),
+              ),
             ),
           ] else
             Container(
@@ -345,13 +514,14 @@ class _PracticeStep extends StatelessWidget {
 
           const SizedBox(height: 24),
           ElevatedButton(
-            onPressed: onContinue,
+            onPressed: hasInteracted ? onContinue : null,
             style: ElevatedButton.styleFrom(
                 backgroundColor: c.primary,
                 foregroundColor: c.primaryForeground,
+                disabledBackgroundColor: c.primary.withValues(alpha: 0.4),
                 minimumSize: const Size(double.infinity, 52),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-            child: const Text('Continue to Application', style: TextStyle(fontFamily: 'Metropolis', fontSize: 15, fontWeight: FontWeight.w600)),
+            child: const Text('Next', style: TextStyle(fontFamily: 'Metropolis', fontSize: 15, fontWeight: FontWeight.w600)),
           ),
           const SizedBox(height: 32),
         ],
