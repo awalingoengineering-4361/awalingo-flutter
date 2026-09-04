@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repository_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+  printf 'Run this command inside a Git repository.\n' >&2
+  exit 69
+}
+cd "$repository_root"
+
+env_file="${AWALINGO_CI_ENV_FILE:-$repository_root/.env}"
+created_env_file=false
+
+cleanup() {
+  if [[ "$created_env_file" == true ]]; then
+    rm -f "$env_file"
+  fi
+}
+trap cleanup EXIT
+
+if [[ ! -e "$env_file" ]]; then
+  umask 077
+  printf '%s\n' \
+    'SUPABASE_URL=https://example.invalid' \
+    'SUPABASE_ANON_KEY=ci-placeholder' >"$env_file"
+  created_env_file=true
+fi
+
+printf '\n[1/6] Resolve dependencies\n'
+flutter pub get
+
+printf '\n[2/6] Static analysis\n'
+flutter analyze --no-fatal-infos
+
+printf '\n[3/6] Flutter tests\n'
+flutter test
+
+printf '\n[4/6] Branch workflow tests\n'
+bash test/workflows/branch_workflow_test.sh
+
+printf '\n[5/6] Emulator workflow tests\n'
+bash test/workflows/emulator_verification_test.sh
+
+printf '\n[6/6] Android debug build\n'
+flutter build apk --debug
+
+printf '\nCI quality verification passed.\n'
