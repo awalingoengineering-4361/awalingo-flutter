@@ -1,5 +1,13 @@
 import 'package:flutter/material.dart';
 
+// Fallback for glyphs Parkinsans/Metropolis don't cover — Yoruba's dotted
+// consonants/vowels (Ọ, Ṣ) and combining tone marks. Apply via
+// `fontFamilyFallback: kContentFontFallback` on TextStyles that render
+// dictionary/term/neo content (user-generated community-language text),
+// not app UI chrome — chrome is always plain English so the fallback is a
+// no-op there anyway, but scoping it keeps intent clear.
+const List<String> kContentFontFallback = ['NotoSans'];
+
 // ── Static brand colours (never change between themes) ────────────────────────
 class AppColors {
   static const Color success = Color(0xFF10B981);
@@ -91,6 +99,7 @@ class AppTheme {
         outline: Color(0xFFE5E5E5),
       ),
       fontFamily: 'Metropolis',
+      fontFamilyFallback: kContentFontFallback,
       dividerColor: AppColorScheme.light.border,
       inputDecorationTheme: _inputTheme(AppColorScheme.light),
     );
@@ -110,6 +119,7 @@ class AppTheme {
         outline: Color(0xFF333333),
       ),
       fontFamily: 'Metropolis',
+      fontFamilyFallback: kContentFontFallback,
       dividerColor: AppColorScheme.dark.border,
       bottomSheetTheme: const BottomSheetThemeData(
         backgroundColor: Color(0xFF171717),

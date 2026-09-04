@@ -132,17 +132,24 @@ class _AwaQuizService {
     );
   }
 
+  // Mirrors community-quiz.ts's `ORDER BY RANDOM() LIMIT limit*3`: PostgREST
+  // has no way to request DB-side random ordering through the normal query
+  // builder, so this fetches every active question for the set (a curated
+  // bank per difficulty, not a large table) and shuffles client-side —
+  // without this, PostgREST's unspecified-but-stable row order meant every
+  // attempt showed the identical first N questions in the identical order.
   Future<List<_QuizQuestion>> loadQuestions(int setId, int limit) async {
     final rows = await _db
         .from('community_quiz_questions')
         .select('id, text, options, correctAnswer')
         .eq('setId', setId)
-        .eq('isActive', true)
-        .limit(limit * 3);
+        .eq('isActive', true);
+
+    final shuffled = List<Map<String, dynamic>>.from(rows)..shuffle();
 
     final seen = <String>{};
     final questions = <_QuizQuestion>[];
-    for (final row in rows) {
+    for (final row in shuffled) {
       final norm = (row['text'] as String).trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
       if (seen.contains(norm)) continue;
       seen.add(norm);
@@ -422,7 +429,7 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
                             const SizedBox(height: 8),
                             Text(
                               'AwaQuiz $_communityName',
-                              style: TextStyle(fontFamily: 'Parkinsans', fontSize: 28, fontWeight: FontWeight.w600, color: c.foreground),
+                              style: TextStyle(fontFamily: 'Parkinsans', fontFamilyFallback: kContentFontFallback, fontSize: 28, fontWeight: FontWeight.w600, color: c.foreground),
                             ),
                             const SizedBox(height: 12),
                             Text(
@@ -951,7 +958,7 @@ class _QuizScreenState extends State<_QuizScreen> {
                                     style: TextStyle(fontFamily: 'Parkinsans', fontSize: 20, fontWeight: FontWeight.w700, color: c.foreground))),
                             const SizedBox(height: 4),
                             Text('${widget.communityName} · ${widget.level.stageName}',
-                                style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, fontWeight: FontWeight.w500, color: c.mutedForeground)),
+                                style: TextStyle(fontFamily: 'Metropolis', fontFamilyFallback: kContentFontFallback, fontSize: 13, fontWeight: FontWeight.w500, color: c.mutedForeground)),
                           ]),
                         ),
                         const SizedBox(width: 12),
@@ -1308,7 +1315,7 @@ class _ResultScreenState extends State<_ResultScreen> {
                 ),
                 const SizedBox(height: 16),
                 Text('${widget.communityName} · ${widget.level.stageName}',
-                    style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, fontWeight: FontWeight.w500, color: st.accent)),
+                    style: TextStyle(fontFamily: 'Metropolis', fontFamilyFallback: kContentFontFallback, fontSize: 13, fontWeight: FontWeight.w500, color: st.accent)),
                 const SizedBox(height: 6),
                 Text('Quiz complete', style: TextStyle(fontFamily: 'Parkinsans', fontSize: 26, fontWeight: FontWeight.w700, color: c.foreground)),
                 const SizedBox(height: 8),
@@ -1374,7 +1381,7 @@ class _ResultScreenState extends State<_ResultScreen> {
                         padding: const EdgeInsets.only(bottom: 8),
                         decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFFCD34D), width: 2))),
                         child: Text(userName,
-                            style: const TextStyle(fontFamily: 'Parkinsans', fontSize: 26, fontWeight: FontWeight.w600, color: Color(0xFF111827)), textAlign: TextAlign.center),
+                            style: const TextStyle(fontFamily: 'Parkinsans', fontFamilyFallback: kContentFontFallback, fontSize: 26, fontWeight: FontWeight.w600, color: Color(0xFF111827)), textAlign: TextAlign.center),
                       ),
                       const SizedBox(height: 12),
                       const Text('achieved a perfect score of', style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: Color(0xFF6B7280))),
@@ -1383,7 +1390,7 @@ class _ResultScreenState extends State<_ResultScreen> {
                           style: const TextStyle(fontFamily: 'Parkinsans', fontSize: 22, fontWeight: FontWeight.w700, color: Color(0xFF059669))),
                       const SizedBox(height: 4),
                       Text('${widget.communityName} · ${widget.level.stageName}',
-                          style: const TextStyle(fontFamily: 'Metropolis', fontSize: 15, fontWeight: FontWeight.w600, color: Color(0xFF111827))),
+                          style: const TextStyle(fontFamily: 'Metropolis', fontFamilyFallback: kContentFontFallback, fontSize: 15, fontWeight: FontWeight.w600, color: Color(0xFF111827))),
                       const SizedBox(height: 16),
                       Container(height: 1, color: const Color(0xFFFCD34D)),
                       const SizedBox(height: 12),

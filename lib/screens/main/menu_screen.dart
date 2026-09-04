@@ -307,6 +307,7 @@ class _MenuScreenState extends State<MenuScreen> {
                     'Hi, $firstName',
                     style: TextStyle(
                       fontFamily: 'Parkinsans',
+                      fontFamilyFallback: kContentFontFallback,
                       fontSize: 22,
                       fontWeight: FontWeight.w600,
                       color: c.foreground,
@@ -858,6 +859,7 @@ class _CtaCard extends StatelessWidget {
                   subtitle,
                   style: TextStyle(
                     fontFamily: 'Metropolis',
+                    fontFamilyFallback: kContentFontFallback,
                     fontSize: 13,
                     color: c.mutedForeground,
                   ),
@@ -905,6 +907,7 @@ class _CtaCard extends StatelessWidget {
                     word,
                     style: TextStyle(
                       fontFamily: 'Parkinsans',
+                      fontFamilyFallback: kContentFontFallback,
                       fontSize: 22,
                       fontWeight: FontWeight.w300,
                       color: wordColor,
@@ -948,7 +951,7 @@ class _CtaCard extends StatelessWidget {
               children: [
                 Text(title, style: TextStyle(fontFamily: 'Parkinsans', fontSize: 17, fontWeight: FontWeight.w600, color: c.foreground)),
                 const SizedBox(height: 4),
-                Text(subtitle, style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: c.mutedForeground)),
+                Text(subtitle, style: TextStyle(fontFamily: 'Metropolis', fontFamilyFallback: kContentFontFallback, fontSize: 13, color: c.mutedForeground)),
               ],
             ),
           ),
@@ -971,7 +974,7 @@ class _CtaCard extends StatelessWidget {
                         style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, fontWeight: FontWeight.w500, color: pillText)),
                   ),
                   const SizedBox(height: 12),
-                  Text(word, style: TextStyle(fontFamily: 'Parkinsans', fontSize: 22, fontWeight: FontWeight.w300, color: wordColor)),
+                  Text(word, style: TextStyle(fontFamily: 'Parkinsans', fontFamilyFallback: kContentFontFallback, fontSize: 22, fontWeight: FontWeight.w300, color: wordColor)),
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,

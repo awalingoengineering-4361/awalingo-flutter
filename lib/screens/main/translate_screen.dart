@@ -351,8 +351,9 @@ class _TranslateScreenState extends State<TranslateScreen> {
                                           ),
                                           child: Text(
                                             term.text,
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontFamily: 'Metropolis',
+                                              fontFamilyFallback: kContentFontFallback,
                                               fontWeight: FontWeight.w500,
                                               fontSize: 13,
                                               color: Colors.white,
@@ -667,6 +668,7 @@ class _SuggestScreenState extends State<SuggestScreen> {
                               widget.term.text,
                               style: TextStyle(
                                 fontFamily: 'Parkinsans',
+                                fontFamilyFallback: kContentFontFallback,
                                 fontSize: 22,
                                 fontWeight: FontWeight.w700,
                                 color: c.foreground,
@@ -679,6 +681,7 @@ class _SuggestScreenState extends State<SuggestScreen> {
                                   : 'noun',
                               style: TextStyle(
                                 fontFamily: 'Metropolis',
+                                fontFamilyFallback: kContentFontFallback,
                                 fontSize: 12,
                                 fontStyle: FontStyle.italic,
                                 color: c.mutedForeground,
@@ -689,6 +692,7 @@ class _SuggestScreenState extends State<SuggestScreen> {
                               widget.term.meaning,
                               style: TextStyle(
                                 fontFamily: 'Metropolis',
+                                fontFamilyFallback: kContentFontFallback,
                                 fontSize: 14,
                                 color: c.foreground.withValues(alpha: 0.8),
                                 height: 1.5,
@@ -1084,6 +1088,7 @@ class _SuggestionEntryWidgetState extends State<_SuggestionEntryWidget> {
                   style: TextStyle(
                       color: c.foreground,
                       fontFamily: 'Metropolis',
+                      fontFamilyFallback: kContentFontFallback,
                       fontSize: 14),
                   decoration: InputDecoration(
                     hintText: 'Type suggestion here',

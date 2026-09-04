@@ -376,6 +376,7 @@ class _RequestScreenState extends State<RequestScreen> {
                     controller: _wordCtrl,
                     style: TextStyle(
                         fontFamily: 'Metropolis',
+                        fontFamilyFallback: kContentFontFallback,
                         fontSize: 14,
                         color: c.foreground),
                     validator: (v) =>
@@ -423,6 +424,7 @@ class _RequestScreenState extends State<RequestScreen> {
                     maxLines: 4,
                     style: TextStyle(
                         fontFamily: 'Metropolis',
+                        fontFamilyFallback: kContentFontFallback,
                         fontSize: 14,
                         color: c.foreground),
                     validator: (v) =>

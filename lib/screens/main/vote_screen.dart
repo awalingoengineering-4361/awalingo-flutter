@@ -284,7 +284,20 @@ class _VoteDetailService {
     return row?['neoId'] as int?;
   }
 
-  Future<void> castVote(String userId, int termId, int neoId) async {
+  // Deliberately diverges from voteNeo() (curateNeo.ts:459-484), which
+  // unconditionally awards a cowry on every call — including when a user
+  // just switches their vote to a different neo on the same term, letting
+  // them farm cowries by repeatedly re-voting. A cowry should only be
+  // earned the first time a user votes on a given term.
+  Future<bool> castVote(String userId, int termId, int neoId) async {
+    final existing = await _db
+        .from('votes')
+        .select('id')
+        .eq('userId', userId)
+        .eq('termId', termId)
+        .maybeSingle();
+    final isFirstVote = existing == null;
+
     await _db.from('votes').delete().eq('userId', userId).eq('termId', termId);
     await _db.from('votes').insert({
       'userId': userId,
@@ -292,6 +305,9 @@ class _VoteDetailService {
       'neoId': neoId,
       'value': 1,
     });
+
+    if (!isFirstVote) return false;
+
     final profile = await _db
         .from('user_profile')
         .select('cowryBalance')
@@ -303,6 +319,7 @@ class _VoteDetailService {
           .from('user_profile')
           .update({'cowryBalance': current + 1}).eq('userId', userId);
     }
+    return true;
   }
 
   Future<_VotingTerm?> fetchTerm(int termId) async {
@@ -803,12 +820,13 @@ class _VoteDetailScreenState extends State<VoteDetailScreen> {
     setState(() { _votedNeoId = neoId; _submitting = true; });
 
     try {
-      await _service.castVote(userId, widget.termId, neoId);
+      final earnedCowry = await _service.castVote(userId, widget.termId, neoId);
       if (mounted) {
         setState(() => _submitting = false);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Voted! You earned 🐚 1 cowry.',
-              style: TextStyle(fontFamily: 'Metropolis')),
+          content: Text(
+              earnedCowry ? 'Voted! You earned 🐚 1 cowry.' : 'Vote updated.',
+              style: const TextStyle(fontFamily: 'Metropolis')),
           backgroundColor: const Color(0xFF2da529),
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 2),
@@ -916,6 +934,7 @@ class _VoteDetailScreenState extends State<VoteDetailScreen> {
                                     _term!.text,
                                     style: TextStyle(
                                       fontFamily: 'Parkinsans',
+                                      fontFamilyFallback: kContentFontFallback,
                                       fontSize: 26,
                                       fontWeight: FontWeight.w700,
                                       color: c.foreground,
@@ -935,6 +954,7 @@ class _VoteDetailScreenState extends State<VoteDetailScreen> {
                                         _term!.partOfSpeech,
                                         style: TextStyle(
                                             fontFamily: 'Metropolis',
+                                            fontFamilyFallback: kContentFontFallback,
                                             fontSize: 11,
                                             color: c.mutedForeground),
                                       ),
@@ -944,6 +964,7 @@ class _VoteDetailScreenState extends State<VoteDetailScreen> {
                                     _term!.meaning,
                                     style: TextStyle(
                                       fontFamily: 'Metropolis',
+                                      fontFamilyFallback: kContentFontFallback,
                                       fontSize: 14,
                                       color: c.mutedForeground,
                                       height: 1.5,
@@ -1119,6 +1140,7 @@ class _NeoRow extends StatelessWidget {
               neo.text,
               style: TextStyle(
                 fontFamily: 'Metropolis',
+                fontFamilyFallback: kContentFontFallback,
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
                 color: c.foreground,
@@ -1649,6 +1671,7 @@ class _JuryDetailScreenState extends State<JuryDetailScreen> {
                                     _term!.text,
                                     style: TextStyle(
                                       fontFamily: 'Parkinsans',
+                                      fontFamilyFallback: kContentFontFallback,
                                       fontSize: 26,
                                       fontWeight: FontWeight.w700,
                                       color: c.foreground,
@@ -1668,6 +1691,7 @@ class _JuryDetailScreenState extends State<JuryDetailScreen> {
                                         _term!.partOfSpeech,
                                         style: TextStyle(
                                             fontFamily: 'Metropolis',
+                                            fontFamilyFallback: kContentFontFallback,
                                             fontSize: 11,
                                             color: c.mutedForeground),
                                       ),
@@ -1677,6 +1701,7 @@ class _JuryDetailScreenState extends State<JuryDetailScreen> {
                                     _term!.meaning,
                                     style: TextStyle(
                                       fontFamily: 'Metropolis',
+                                      fontFamilyFallback: kContentFontFallback,
                                       fontSize: 14,
                                       color: c.mutedForeground,
                                       height: 1.5,
@@ -1854,6 +1879,7 @@ class _JuryNeoRow extends StatelessWidget {
                   neo.text,
                   style: TextStyle(
                     fontFamily: 'Metropolis',
+                    fontFamilyFallback: kContentFontFallback,
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                     color: c.foreground,
