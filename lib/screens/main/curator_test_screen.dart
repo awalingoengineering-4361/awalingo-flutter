@@ -6,10 +6,18 @@ import '../../services/auth_provider.dart';
 
 // ── Models ────────────────────────────────────────────────────────────────────
 
+// Mirrors quiz.ts's QuizOption: options are stored as JSON
+// [{"label": "A", "value": "..."}], and correctAnswer matches a "value".
+class _QuizOption {
+  final String label;
+  final String value;
+  const _QuizOption({required this.label, required this.value});
+}
+
 class _QuizQuestion {
   final int id;
   final String text;
-  final List<String> options;
+  final List<_QuizOption> options;
   final String correctAnswer;
   const _QuizQuestion({required this.id, required this.text, required this.options, required this.correctAnswer});
 }
@@ -32,13 +40,21 @@ class _CuratorTestService {
 
     if (rows.isEmpty) return [];
 
-    // Shuffle in memory and take up to 10
+    // Shuffle in memory and take up to 10 — mirrors getCuratorTestQuestions
+    // (quiz.ts), which fetches randomized rows and slices to QUIZ_QUESTION_COUNT.
     final list = List.of(rows)..shuffle();
     return list.take(10).map((r) {
       final rawOptions = r['options'];
-      List<String> options;
+      List<_QuizOption> options;
       if (rawOptions is List) {
-        options = rawOptions.map((o) => o.toString()).toList();
+        options = rawOptions
+            .whereType<Map>()
+            .map((o) => _QuizOption(
+                  label: o['label']?.toString() ?? '',
+                  value: o['value']?.toString() ?? '',
+                ))
+            .where((o) => o.value.isNotEmpty)
+            .toList();
       } else {
         options = [];
       }
@@ -51,19 +67,39 @@ class _CuratorTestService {
     }).toList();
   }
 
+  // Mirrors submitQuizAttempt's transaction (quiz.ts): record the attempt,
+  // then on pass swap EXPLORER→CURATOR in user_roles, and either way log the
+  // cowry change via cowry_ledger (the source of truth everywhere else in
+  // the app — see _AwaQuizService.unlockReview) rather than a direct balance write.
   Future<bool> submitAttempt(String userId, int score, int total) async {
     final passed = total > 0 && (score / total) >= 0.7;
     try {
       await _db.from('quiz_attempts').insert({
         'userId': userId,
         'score': score,
-        'totalQuestions': total,
         'passed': passed,
       });
+
       if (passed) {
-        // Attempt to upgrade role via RPC — the backend handles the transaction
-        await _db.rpc('upgrade_user_to_curator', params: {'p_user_id': userId});
+        final curatorRole = await _db.from('roles').select('id').eq('name', 'CURATOR').maybeSingle();
+        final roleId = curatorRole?['id'] as int?;
+        if (roleId != null) {
+          await _db.from('user_roles').delete().eq('userId', userId);
+          await _db.from('user_roles').insert({'userId': userId, 'roleId': roleId});
+        }
       }
+
+      await _db.from('cowry_ledger').insert({
+        'userId': userId,
+        'eventType': passed ? 'PASS_CURATOR_TEST' : 'FAIL_CURATOR_TEST',
+        'description': passed
+            ? 'User passed curator test and was promoted to CURATOR role'
+            : 'User failed curator test',
+        'cowry_changed': passed ? 10 : -3,
+      });
+      final ledgerRows = await _db.from('cowry_ledger').select('cowry_changed').eq('userId', userId);
+      final newBalance = (ledgerRows as List).fold<int>(0, (sum, r) => sum + (r['cowry_changed'] as int));
+      await _db.from('user_profile').update({'cowryBalance': newBalance}).eq('userId', userId);
     } catch (e) {
       debugPrint('CuratorTest submit: $e');
     }
@@ -252,9 +288,10 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
                     const SizedBox(height: 24),
                     for (final opt in q.options)
                       _OptionTile(
-                        label: opt,
-                        selected: answered == opt,
-                        onTap: () => _answer(opt),
+                        badge: opt.label,
+                        label: opt.value,
+                        selected: answered == opt.value,
+                        onTap: () => _answer(opt.value),
                         c: c,
                       ),
                   ],
@@ -330,11 +367,12 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
 // ── Option Tile ───────────────────────────────────────────────────────────────
 
 class _OptionTile extends StatelessWidget {
+  final String badge;
   final String label;
   final bool selected;
   final VoidCallback onTap;
   final AppColorScheme c;
-  const _OptionTile({required this.label, required this.selected, required this.onTap, required this.c});
+  const _OptionTile({required this.badge, required this.label, required this.selected, required this.onTap, required this.c});
 
   @override
   Widget build(BuildContext context) {
@@ -351,13 +389,19 @@ class _OptionTile extends StatelessWidget {
         ),
         child: Row(children: [
           Container(
-            width: 20, height: 20,
+            width: 32, height: 32,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: selected ? c.primary : c.border, width: 2),
-              color: selected ? c.primary : Colors.transparent,
+              color: selected ? c.foreground : c.secondary,
             ),
-            child: selected ? const Icon(Icons.check, size: 12, color: Colors.white) : null,
+            child: Center(
+              child: Text(badge,
+                  style: TextStyle(
+                      fontFamily: 'Metropolis',
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: selected ? c.background : c.mutedForeground)),
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(child: Text(label, style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, color: c.foreground))),
