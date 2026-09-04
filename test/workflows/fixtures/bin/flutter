@@ -4,6 +4,11 @@ set -euo pipefail
 
 printf 'flutter %s\n' "$*" >>"$AWALINGO_TEST_COMMAND_LOG"
 
+if [[ -n "${AWALINGO_TEST_EXPECT_ENV_FILE:-}" ]]; then
+  grep -Fxq 'SUPABASE_URL=https://example.invalid' "$AWALINGO_TEST_EXPECT_ENV_FILE"
+  grep -Fxq 'SUPABASE_ANON_KEY=ci-placeholder' "$AWALINGO_TEST_EXPECT_ENV_FILE"
+fi
+
 if [[ "${1:-}" == "build" && "${2:-}" == "apk" ]]; then
   mkdir -p "$(dirname "$AWALINGO_APK_PATH")"
   printf 'fake apk\n' >"$AWALINGO_APK_PATH"
