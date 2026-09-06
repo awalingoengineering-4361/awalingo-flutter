@@ -152,8 +152,13 @@ class _HomeService {
     List<_LeaderboardEntry> leaderboard = [];
     if (top5.isNotEmpty) {
       final top5Ids = top5.map((e) => e.key).toList();
+      // user_profile's RLS only allows reading your own row, but the
+      // leaderboard needs other users' names — public_profile_names is a
+      // narrow view (userId, name only) owned by postgres, so it bypasses
+      // that row restriction without exposing the rest of user_profile
+      // (phone, cowryBalance, etc.) the way a broader policy would.
       final profiles = await _db
-          .from('user_profile')
+          .from('public_profile_names')
           .select('userId, name')
           .inFilter('userId', top5Ids);
 

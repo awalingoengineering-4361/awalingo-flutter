@@ -13,8 +13,14 @@ class _WordRequest {
   final String userId;
   final String languageName;
   final DateTime createdAt;
-  const _WordRequest({required this.id, required this.word, required this.status,
-      required this.userId, required this.languageName, required this.createdAt});
+  const _WordRequest({
+    required this.id,
+    required this.word,
+    required this.status,
+    required this.userId,
+    required this.languageName,
+    required this.createdAt,
+  });
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -36,7 +42,9 @@ class _CuratorRequestsService {
   Future<List<_WordRequest>> loadPending(int? communityLangId) async {
     var query = _db
         .from('translation_requests')
-        .select('id, word, status, userId, sourceLanguageId, createdAt, language:languages!sourceLanguageId(name)')
+        .select(
+          'id, word, status, userId, sourceLanguageId, createdAt, language:languages!sourceLanguageId(name)',
+        )
         .eq('status', 'PENDING');
 
     if (communityLangId != null) {
@@ -52,26 +60,34 @@ class _CuratorRequestsService {
         status: r['status'] as String,
         userId: r['userId'] as String,
         languageName: lang?['name'] as String? ?? 'Unknown',
-        createdAt: DateTime.tryParse(r['createdAt'] as String? ?? '') ?? DateTime.now(),
+        createdAt:
+            DateTime.tryParse(r['createdAt'] as String? ?? '') ??
+            DateTime.now(),
       );
     }).toList();
   }
 
   Future<void> approve(String userId, int requestId) async {
-    await _db.from('translation_requests').update({
-      'status': 'APPROVED',
-      'reviewedById': userId,
-      'updatedAt': DateTime.now().toIso8601String(),
-    }).eq('id', requestId);
+    await _db
+        .from('translation_requests')
+        .update({
+          'status': 'APPROVED',
+          'reviewedById': userId,
+          'updatedAt': DateTime.now().toIso8601String(),
+        })
+        .eq('id', requestId);
   }
 
   Future<void> reject(String userId, int requestId, String reason) async {
-    await _db.from('translation_requests').update({
-      'status': 'REJECTED',
-      'rejectionReason': reason,
-      'reviewedById': userId,
-      'updatedAt': DateTime.now().toIso8601String(),
-    }).eq('id', requestId);
+    await _db
+        .from('translation_requests')
+        .update({
+          'status': 'REJECTED',
+          'rejectionReason': reason,
+          'reviewedById': userId,
+          'updatedAt': DateTime.now().toIso8601String(),
+        })
+        .eq('id', requestId);
   }
 }
 
@@ -97,8 +113,7 @@ class _CuratorRequestsScreenState extends State<CuratorRequestsScreen> {
   // may act on their own submitted request unless they're ADMIN.
   bool get _canReview => hasPermission(_role, Permission.reviewRequests);
   bool get _canApprove => hasPermission(_role, Permission.approveRequests);
-  bool _canActOn(_WordRequest r) =>
-      r.userId != _userId || _role == 'ADMIN';
+  bool _canActOn(_WordRequest r) => r.userId != _userId || _role == 'ADMIN';
 
   _WordRequest? _findRequest(int requestId) {
     for (final r in _requests) {
@@ -115,15 +130,25 @@ class _CuratorRequestsScreenState extends State<CuratorRequestsScreen> {
 
   Future<void> _load() async {
     final userId = AuthProvider.of(context).user?.id;
-    if (userId == null) { setState(() => _loading = false); return; }
+    if (userId == null) {
+      setState(() => _loading = false);
+      return;
+    }
     _userId = userId;
     try {
       _role = await _service.fetchRole(userId);
       final utl = await Supabase.instance.client
-          .from('user_target_languages').select('languageId').eq('userId', userId).maybeSingle();
+          .from('user_target_languages')
+          .select('languageId')
+          .eq('userId', userId)
+          .maybeSingle();
       _communityLangId = utl?['languageId'] as int?;
       final requests = await _service.loadPending(_communityLangId);
-      if (mounted) setState(() { _requests = requests; _loading = false; });
+      if (mounted)
+        setState(() {
+          _requests = requests;
+          _loading = false;
+        });
     } catch (e) {
       debugPrint('CuratorRequests load: $e');
       if (mounted) setState(() => _loading = false);
@@ -135,14 +160,23 @@ class _CuratorRequestsScreenState extends State<CuratorRequestsScreen> {
     final request = _findRequest(requestId);
     if (userId == null || request == null) return;
     if (!_canApprove || !_canActOn(request)) return;
-    setState(() { _requests = _requests.where((r) => r.id != requestId).toList(); });
+    setState(() {
+      _requests = _requests.where((r) => r.id != requestId).toList();
+    });
     await _service.approve(userId, requestId);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Request approved.', style: TextStyle(fontFamily: 'Metropolis')),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Request approved.',
+            style: TextStyle(fontFamily: 'Metropolis'),
+          ),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(12)),
+          ),
+        ),
+      );
     }
   }
 
@@ -156,28 +190,60 @@ class _CuratorRequestsScreenState extends State<CuratorRequestsScreen> {
       builder: (_) => AlertDialog(
         backgroundColor: c.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Reject request?', style: TextStyle(fontFamily: 'Parkinsans', fontSize: 16, color: c.foreground)),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text('Optionally provide a reason:', style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: c.mutedForeground)),
-          const SizedBox(height: 10),
-          TextField(
-            controller: ctrl,
-            decoration: InputDecoration(
-              hintText: 'Reason (optional)',
-              hintStyle: TextStyle(fontFamily: 'Metropolis', color: c.mutedForeground),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: c.border)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: c.border)),
-              contentPadding: const EdgeInsets.all(12),
-            ),
-            style: TextStyle(fontFamily: 'Metropolis', color: c.foreground),
-            maxLines: 2,
+        title: Text(
+          'Reject request?',
+          style: TextStyle(
+            fontFamily: 'Parkinsans',
+            fontSize: 16,
+            color: c.foreground,
           ),
-        ]),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Optionally provide a reason:',
+              style: TextStyle(
+                fontFamily: 'Metropolis',
+                fontSize: 13,
+                color: c.mutedForeground,
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: ctrl,
+              decoration: InputDecoration(
+                hintText: 'Reason (optional)',
+                hintStyle: TextStyle(
+                  fontFamily: 'Metropolis',
+                  color: c.mutedForeground,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: c.border),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: c.border),
+                ),
+                contentPadding: const EdgeInsets.all(12),
+              ),
+              style: TextStyle(fontFamily: 'Metropolis', color: c.foreground),
+              maxLines: 2,
+            ),
+          ],
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: Text('Cancel', style: TextStyle(color: c.mutedForeground))),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel', style: TextStyle(color: c.mutedForeground)),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Reject', style: TextStyle(color: Color(0xFFEF4444))),
+            child: const Text(
+              'Reject',
+              style: TextStyle(color: Color(0xFFEF4444)),
+            ),
           ),
         ],
       ),
@@ -186,14 +252,23 @@ class _CuratorRequestsScreenState extends State<CuratorRequestsScreen> {
     if (!mounted) return;
     final userId = _userId;
     if (userId == null) return;
-    setState(() { _requests = _requests.where((r) => r.id != requestId).toList(); });
+    setState(() {
+      _requests = _requests.where((r) => r.id != requestId).toList();
+    });
     await _service.reject(userId, requestId, ctrl.text.trim());
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Request rejected.', style: TextStyle(fontFamily: 'Metropolis')),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Request rejected.',
+            style: TextStyle(fontFamily: 'Metropolis'),
+          ),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(12)),
+          ),
+        ),
+      );
     }
   }
 
@@ -207,34 +282,50 @@ class _CuratorRequestsScreenState extends State<CuratorRequestsScreen> {
         backgroundColor: c.card,
         elevation: 0,
         leading: BackButton(color: c.foreground),
-        title: Text('Word Requests', style: TextStyle(fontFamily: 'Parkinsans', fontSize: 17, fontWeight: FontWeight.w600, color: c.foreground)),
-        bottom: PreferredSize(preferredSize: const Size.fromHeight(1), child: Divider(height: 1, color: c.border)),
+        title: Text(
+          'Word Requests',
+          style: TextStyle(
+            fontFamily: 'Parkinsans',
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
+            color: c.foreground,
+          ),
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Divider(height: 1, color: c.border),
+        ),
       ),
-      body: RefreshIndicator(
-        onRefresh: () async { setState(() => _loading = true); await _load(); },
-        color: c.primary,
-        child: _loading
-            ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
-            : !_canReview
-                ? _NotAuthorizedState(c: c)
-                : _requests.isEmpty
-                    ? _EmptyState(c: c)
-                    : ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
-                        itemCount: _requests.length,
-                        itemBuilder: (_, i) {
-                          final request = _requests[i];
-                          final canActOnThis = _canActOn(request);
-                          return _RequestTile(
-                            request: request,
-                            c: c,
-                            canApprove: _canApprove && canActOnThis,
-                            canReject: _canReview && canActOnThis,
-                            onApprove: () => _approve(request.id),
-                            onReject: () => _showRejectDialog(request.id),
-                          );
-                        },
-                      ),
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: () async {
+            setState(() => _loading = true);
+            await _load();
+          },
+          color: c.primary,
+          child: _loading
+              ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+              : !_canReview
+              ? _NotAuthorizedState(c: c)
+              : _requests.isEmpty
+              ? _EmptyState(c: c)
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
+                  itemCount: _requests.length,
+                  itemBuilder: (_, i) {
+                    final request = _requests[i];
+                    final canActOnThis = _canActOn(request);
+                    return _RequestTile(
+                      request: request,
+                      c: c,
+                      canApprove: _canApprove && canActOnThis,
+                      canReject: _canReview && canActOnThis,
+                      onApprove: () => _approve(request.id),
+                      onReject: () => _showRejectDialog(request.id),
+                    );
+                  },
+                ),
+        ),
       ),
     );
   }
@@ -268,56 +359,117 @@ class _RequestTile extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: c.card, borderRadius: BorderRadius.circular(12), border: Border.all(color: c.border)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(request.word, style: TextStyle(fontFamily: 'Parkinsans', fontFamilyFallback: kContentFontFallback, fontSize: 17, fontWeight: FontWeight.w600, color: c.foreground)),
-              const SizedBox(height: 2),
-              Text('${request.languageName} • ${_timeAgo(request.createdAt)}',
-                  style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, color: c.mutedForeground)),
-            ]),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(color: c.secondary, borderRadius: BorderRadius.circular(100)),
-            child: Text('Pending', style: TextStyle(fontFamily: 'Metropolis', fontSize: 11, color: c.mutedForeground)),
-          ),
-        ]),
-        const SizedBox(height: 14),
-        if (!canReject && !canApprove)
-          Text(
-            "You're not authorized to act on this request.",
-            style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, color: c.mutedForeground),
-          )
-        else
-          Row(children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: canReject ? onReject : null,
-                style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFFEF4444),
-                    side: const BorderSide(color: Color(0xFFEF4444)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    padding: const EdgeInsets.symmetric(vertical: 10)),
-                child: const Text('Reject', style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w500)),
+      decoration: BoxDecoration(
+        color: c.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: c.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      request.word,
+                      style: TextStyle(
+                        fontFamily: 'Parkinsans',
+                        fontFamilyFallback: kContentFontFallback,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        color: c.foreground,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${request.languageName} • ${_timeAgo(request.createdAt)}',
+                      style: TextStyle(
+                        fontFamily: 'Metropolis',
+                        fontSize: 12,
+                        color: c.mutedForeground,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: ElevatedButton(
-                onPressed: canApprove ? onApprove : null,
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF22C55E),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    padding: const EdgeInsets.symmetric(vertical: 10)),
-                child: const Text('Approve', style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w500)),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: c.secondary,
+                  borderRadius: BorderRadius.circular(100),
+                ),
+                child: Text(
+                  'Pending',
+                  style: TextStyle(
+                    fontFamily: 'Metropolis',
+                    fontSize: 11,
+                    color: c.mutedForeground,
+                  ),
+                ),
               ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (!canReject && !canApprove)
+            Text(
+              "You're not authorized to act on this request.",
+              style: TextStyle(
+                fontFamily: 'Metropolis',
+                fontSize: 12,
+                color: c.mutedForeground,
+              ),
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: canReject ? onReject : null,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFEF4444),
+                      side: const BorderSide(color: Color(0xFFEF4444)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                    ),
+                    child: const Text(
+                      'Reject',
+                      style: TextStyle(
+                        fontFamily: 'Metropolis',
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: canApprove ? onApprove : null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF22C55E),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                    ),
+                    child: const Text(
+                      'Approve',
+                      style: TextStyle(
+                        fontFamily: 'Metropolis',
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ]),
-      ]),
+        ],
+      ),
     );
   }
 }
@@ -328,26 +480,53 @@ class _NotAuthorizedState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(children: [
-      SizedBox(
-        height: MediaQuery.of(context).size.height * 0.5,
-        child: Center(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(
-              width: 64, height: 64,
-              decoration: BoxDecoration(color: c.secondary, shape: BoxShape.circle),
-              child: Icon(Icons.lock_outline, size: 30, color: c.mutedForeground),
+    return ListView(
+      children: [
+        SizedBox(
+          height: MediaQuery.of(context).size.height * 0.5,
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: c.secondary,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.lock_outline,
+                    size: 30,
+                    color: c.mutedForeground,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Not authorized',
+                  style: TextStyle(
+                    fontFamily: 'Parkinsans',
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: c.foreground,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Only curators, jurors, managers, and admins can review requests.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'Metropolis',
+                    fontSize: 13,
+                    color: c.mutedForeground,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            Text('Not authorized', style: TextStyle(fontFamily: 'Parkinsans', fontSize: 16, fontWeight: FontWeight.w600, color: c.foreground)),
-            const SizedBox(height: 6),
-            Text('Only curators, jurors, managers, and admins can review requests.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: c.mutedForeground)),
-          ]),
+          ),
         ),
-      ),
-    ]);
+      ],
+    );
   }
 }
 
@@ -357,23 +536,51 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(children: [
-      SizedBox(
-        height: MediaQuery.of(context).size.height * 0.5,
-        child: Center(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(
-              width: 64, height: 64,
-              decoration: BoxDecoration(color: c.secondary, shape: BoxShape.circle),
-              child: Icon(Icons.check_circle_outline, size: 30, color: c.mutedForeground),
+    return ListView(
+      children: [
+        SizedBox(
+          height: MediaQuery.of(context).size.height * 0.5,
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: c.secondary,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.check_circle_outline,
+                    size: 30,
+                    color: c.mutedForeground,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'All clear!',
+                  style: TextStyle(
+                    fontFamily: 'Parkinsans',
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: c.foreground,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'No pending requests.',
+                  style: TextStyle(
+                    fontFamily: 'Metropolis',
+                    fontSize: 13,
+                    color: c.mutedForeground,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            Text('All clear!', style: TextStyle(fontFamily: 'Parkinsans', fontSize: 16, fontWeight: FontWeight.w600, color: c.foreground)),
-            const SizedBox(height: 6),
-            Text('No pending requests.', style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: c.mutedForeground)),
-          ]),
+          ),
         ),
-      ),
-    ]);
+      ],
+    );
   }
 }

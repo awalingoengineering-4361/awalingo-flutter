@@ -12,7 +12,12 @@ class _PracticeSuggestion {
   final String text;
   final String type;
   final String? audioUrl;
-  const _PracticeSuggestion({required this.id, required this.text, required this.type, this.audioUrl});
+  const _PracticeSuggestion({
+    required this.id,
+    required this.text,
+    required this.type,
+    this.audioUrl,
+  });
 }
 
 class _PracticeTerm {
@@ -24,8 +29,13 @@ class _PracticeTerm {
   final bool isFallback;
   final List<_PracticeSuggestion> suggestions;
   const _PracticeTerm({
-    required this.id, required this.text, this.phonics, required this.partOfSpeech,
-    required this.meaning, required this.isFallback, required this.suggestions,
+    required this.id,
+    required this.text,
+    this.phonics,
+    required this.partOfSpeech,
+    required this.meaning,
+    required this.isFallback,
+    required this.suggestions,
   });
 }
 
@@ -36,7 +46,8 @@ const _fallbackPracticeTerm = _PracticeTerm(
   text: 'Bookmark',
   phonics: '/ˈbʊkmɑːk/',
   partOfSpeech: 'noun',
-  meaning: 'a piece of thick paper, leather, or plastic that you put between '
+  meaning:
+      'a piece of thick paper, leather, or plastic that you put between '
       'the pages of a book so that you can find a page again quickly.',
   isFallback: true,
   suggestions: [
@@ -78,13 +89,25 @@ class _BecomeJurorService {
   // stable per-user index, and returns the first candidate that actually
   // has neo suggestions — falling back to the canned joke term otherwise.
   Future<_PracticeTerm> loadPracticeTerm(String userId) async {
-    final utl = await _db.from('user_target_languages').select('languageId').eq('userId', userId).maybeSingle();
+    final utl = await _db
+        .from('user_target_languages')
+        .select('languageId')
+        .eq('userId', userId)
+        .maybeSingle();
     final communityId = utl?['languageId'] as int?;
     if (communityId == null) return _fallbackPracticeTerm;
 
     final results = await Future.wait([
-      _loadJuryTerms(languageId: 1, targetLanguageId: communityId, userId: userId),
-      _loadJuryTerms(languageId: communityId, targetLanguageId: 1, userId: userId),
+      _loadJuryTerms(
+        languageId: 1,
+        targetLanguageId: communityId,
+        userId: userId,
+      ),
+      _loadJuryTerms(
+        languageId: communityId,
+        targetLanguageId: 1,
+        userId: userId,
+      ),
     ]);
     final candidates = [
       for (final t in results[0]) (term: t, suggestionLanguageId: communityId),
@@ -93,7 +116,10 @@ class _BecomeJurorService {
     if (candidates.isEmpty) return _fallbackPracticeTerm;
 
     final start = _stableUserIndex(userId, candidates.length);
-    final ordered = [...candidates.sublist(start), ...candidates.sublist(0, start)];
+    final ordered = [
+      ...candidates.sublist(start),
+      ...candidates.sublist(0, start),
+    ];
 
     for (final candidate in ordered) {
       final suggestions = await _loadJuryNeosForTerm(
@@ -107,7 +133,9 @@ class _BecomeJurorService {
         text: candidate.term.text,
         phonics: candidate.term.phonics,
         partOfSpeech: candidate.term.partOfSpeech,
-        meaning: candidate.term.meaning.isNotEmpty ? candidate.term.meaning : 'No definition available.',
+        meaning: candidate.term.meaning.isNotEmpty
+            ? candidate.term.meaning
+            : 'No definition available.',
         isFallback: false,
         suggestions: suggestions.take(4).toList(),
       );
@@ -119,7 +147,18 @@ class _BecomeJurorService {
   // whose language is `languageId` that have at least one qualifying neo
   // (rejectCount<3, not this user's own, not already rated by this user)
   // in `targetLanguageId`.
-  Future<List<({int id, String text, String? phonics, String partOfSpeech, String meaning})>> _loadJuryTerms({
+  Future<
+    List<
+      ({
+        int id,
+        String text,
+        String? phonics,
+        String partOfSpeech,
+        String meaning,
+      })
+    >
+  >
+  _loadJuryTerms({
     required int languageId,
     required int targetLanguageId,
     required String userId,
@@ -133,7 +172,11 @@ class _BecomeJurorService {
     if (neoRows.isEmpty) return [];
 
     final neoIds = neoRows.map((r) => r['id'] as int).toList();
-    final ratedRows = await _db.from('neo_rating').select('neoId').eq('userId', userId).inFilter('neoId', neoIds);
+    final ratedRows = await _db
+        .from('neo_rating')
+        .select('neoId')
+        .eq('userId', userId)
+        .inFilter('neoId', neoIds);
     final ratedNeoIds = ratedRows.map((r) => r['neoId'] as int).toSet();
 
     final validTermIds = neoRows
@@ -145,7 +188,9 @@ class _BecomeJurorService {
 
     final termRows = await _db
         .from('terms')
-        .select('id, text, phonics, meaning, partOfSpeech:part_of_speech!partOfSpeechId(name)')
+        .select(
+          'id, text, phonics, meaning, partOfSpeech:part_of_speech!partOfSpeechId(name)',
+        )
         .eq('languageId', languageId)
         .inFilter('id', validTermIds);
 
@@ -179,17 +224,23 @@ class _BecomeJurorService {
     if (rows.isEmpty) return [];
 
     final neoIds = rows.map((r) => r['id'] as int).toList();
-    final ratedRows = await _db.from('neo_rating').select('neoId').eq('userId', userId).inFilter('neoId', neoIds);
+    final ratedRows = await _db
+        .from('neo_rating')
+        .select('neoId')
+        .eq('userId', userId)
+        .inFilter('neoId', neoIds);
     final ratedNeoIds = ratedRows.map((r) => r['neoId'] as int).toSet();
 
     return rows
         .where((r) => !ratedNeoIds.contains(r['id'] as int))
-        .map((r) => _PracticeSuggestion(
-              id: r['id'] as int,
-              text: r['text'] as String,
-              type: r['type'] as String? ?? 'POPULAR',
-              audioUrl: r['audioUrl'] as String?,
-            ))
+        .map(
+          (r) => _PracticeSuggestion(
+            id: r['id'] as int,
+            text: r['text'] as String,
+            type: r['type'] as String? ?? 'POPULAR',
+            audioUrl: r['audioUrl'] as String?,
+          ),
+        )
         .toList();
   }
 
@@ -202,8 +253,14 @@ class _BecomeJurorService {
     return row != null;
   }
 
-  Future<({String? name, String? email})> prefillFromProfile(String userId) async {
-    final row = await _db.from('user_profile').select('name').eq('userId', userId).maybeSingle();
+  Future<({String? name, String? email})> prefillFromProfile(
+    String userId,
+  ) async {
+    final row = await _db
+        .from('user_profile')
+        .select('name')
+        .eq('userId', userId)
+        .maybeSingle();
     final name = row?['name'] as String?;
     final authUser = _db.auth.currentUser;
     return (name: name, email: authUser?.email);
@@ -286,12 +343,19 @@ class _BecomeJurorScreenState extends State<BecomeJurorScreen> {
 
   Future<void> _load() async {
     final userId = AuthProvider.of(context).user?.id;
-    if (userId == null) { setState(() => _loading = false); return; }
+    if (userId == null) {
+      setState(() => _loading = false);
+      return;
+    }
     try {
       final role = await fetchUserRole(Supabase.instance.client, userId);
       final isCurator = role == 'CURATOR';
       if (!isCurator) {
-        if (mounted) setState(() { _isCurator = false; _loading = false; });
+        if (mounted)
+          setState(() {
+            _isCurator = false;
+            _loading = false;
+          });
         return;
       }
 
@@ -324,10 +388,15 @@ class _BecomeJurorScreenState extends State<BecomeJurorScreen> {
     if (!_isCurator) return;
     if (!_formKey.currentState!.validate()) return;
     if (!_agreementAccepted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Please accept the agreement to continue.', style: TextStyle(fontFamily: 'Metropolis')),
-        behavior: SnackBarBehavior.floating,
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please accept the agreement to continue.',
+            style: TextStyle(fontFamily: 'Metropolis'),
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
       return;
     }
     final userId = AuthProvider.of(context).user?.id;
@@ -340,14 +409,23 @@ class _BecomeJurorScreenState extends State<BecomeJurorScreen> {
         email: _emailCtrl.text.trim(),
         phone: _phoneCtrl.text.trim(),
       );
-      if (mounted) setState(() { _step = 2; _submitting = false; });
+      if (mounted)
+        setState(() {
+          _step = 2;
+          _submitting = false;
+        });
     } catch (e) {
       debugPrint('BecomeJuror submit: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Submission failed. Please try again.', style: TextStyle(fontFamily: 'Metropolis')),
-          behavior: SnackBarBehavior.floating,
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Submission failed. Please try again.',
+              style: TextStyle(fontFamily: 'Metropolis'),
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
         setState(() => _submitting = false);
       }
     }
@@ -363,37 +441,57 @@ class _BecomeJurorScreenState extends State<BecomeJurorScreen> {
         backgroundColor: c.card,
         elevation: 0,
         leading: BackButton(color: c.foreground),
-        title: Text('Become a Juror', style: TextStyle(fontFamily: 'Parkinsans', fontSize: 17, fontWeight: FontWeight.w600, color: c.foreground)),
-        bottom: PreferredSize(preferredSize: const Size.fromHeight(1), child: Divider(height: 1, color: c.border)),
+        title: Text(
+          'Become a Juror',
+          style: TextStyle(
+            fontFamily: 'Parkinsans',
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
+            color: c.foreground,
+          ),
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Divider(height: 1, color: c.border),
+        ),
       ),
-      body: _loading
-          ? Center(child: CircularProgressIndicator(color: c.primary, strokeWidth: 2))
-          : !_isCurator
-              ? _NotCuratorView(c: c)
-              : _alreadyApplied && _step != 2
-              ? _AlreadyAppliedView(c: c)
-              : _step == 0
-                  ? _PracticeStep(
-                      term: _practiceTerm,
-                      ratings: _ratings,
-                      emojis: _emojis,
-                      c: c,
-                      onRate: (suggestionId, v) => setState(() => _ratings[suggestionId] = v),
-                      onContinue: () => setState(() => _step = 1),
-                    )
-                  : _step == 1
-                      ? _FormStep(
-                          formKey: _formKey,
-                          nameCtrl: _nameCtrl,
-                          emailCtrl: _emailCtrl,
-                          phoneCtrl: _phoneCtrl,
-                          agreementAccepted: _agreementAccepted,
-                          submitting: _submitting,
-                          c: c,
-                          onAgreementChanged: (v) => setState(() => _agreementAccepted = v ?? false),
-                          onSubmit: _submit,
-                        )
-                      : _DoneView(c: c),
+      body: SafeArea(
+        child: _loading
+            ? Center(
+                child: CircularProgressIndicator(
+                  color: c.primary,
+                  strokeWidth: 2,
+                ),
+              )
+            : !_isCurator
+            ? _NotCuratorView(c: c)
+            : _alreadyApplied && _step != 2
+            ? _AlreadyAppliedView(c: c)
+            : _step == 0
+            ? _PracticeStep(
+                term: _practiceTerm,
+                ratings: _ratings,
+                emojis: _emojis,
+                c: c,
+                onRate: (suggestionId, v) =>
+                    setState(() => _ratings[suggestionId] = v),
+                onContinue: () => setState(() => _step = 1),
+              )
+            : _step == 1
+            ? _FormStep(
+                formKey: _formKey,
+                nameCtrl: _nameCtrl,
+                emailCtrl: _emailCtrl,
+                phoneCtrl: _phoneCtrl,
+                agreementAccepted: _agreementAccepted,
+                submitting: _submitting,
+                c: c,
+                onAgreementChanged: (v) =>
+                    setState(() => _agreementAccepted = v ?? false),
+                onSubmit: _submit,
+              )
+            : _DoneView(c: c),
+      ),
     );
   }
 }
@@ -409,8 +507,12 @@ class _PracticeStep extends StatelessWidget {
   final VoidCallback onContinue;
 
   const _PracticeStep({
-    required this.term, required this.ratings, required this.emojis,
-    required this.c, required this.onRate, required this.onContinue,
+    required this.term,
+    required this.ratings,
+    required this.emojis,
+    required this.c,
+    required this.onRate,
+    required this.onContinue,
   });
 
   @override
@@ -424,8 +526,15 @@ class _PracticeStep extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('How would you rate these translations below?',
-              style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, fontWeight: FontWeight.w500, color: c.foreground)),
+          Text(
+            'How would you rate these translations below?',
+            style: TextStyle(
+              fontFamily: 'Metropolis',
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: c.foreground,
+            ),
+          ),
           const SizedBox(height: 12),
 
           if (term != null) ...[
@@ -438,17 +547,55 @@ class _PracticeStep extends StatelessWidget {
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: const Color(0xFFA5F3FC)),
               ),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(term!.text, style: TextStyle(fontFamily: 'Parkinsans', fontFamilyFallback: kContentFontFallback, fontSize: 20, fontWeight: FontWeight.w600, color: c.foreground)),
-                const SizedBox(height: 4),
-                Wrap(spacing: 6, children: [
-                  if ((term!.phonics ?? '').isNotEmpty)
-                    Text(term!.phonics!, style: TextStyle(fontFamily: 'Metropolis', fontFamilyFallback: kContentFontFallback, fontSize: 12, color: c.mutedForeground)),
-                  Text('• ${term!.partOfSpeech}', style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, color: c.mutedForeground)),
-                ]),
-                const SizedBox(height: 10),
-                Text(term!.meaning, style: TextStyle(fontFamily: 'Metropolis', fontFamilyFallback: kContentFontFallback, fontSize: 13, color: c.foreground.withValues(alpha: 0.85))),
-              ]),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    term!.text,
+                    style: TextStyle(
+                      fontFamily: 'Parkinsans',
+                      fontFamilyFallback: kContentFontFallback,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      color: c.foreground,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 6,
+                    children: [
+                      if ((term!.phonics ?? '').isNotEmpty)
+                        Text(
+                          term!.phonics!,
+                          style: TextStyle(
+                            fontFamily: 'Metropolis',
+                            fontFamilyFallback: kContentFontFallback,
+                            fontSize: 12,
+                            color: c.mutedForeground,
+                          ),
+                        ),
+                      Text(
+                        '• ${term!.partOfSpeech}',
+                        style: TextStyle(
+                          fontFamily: 'Metropolis',
+                          fontSize: 12,
+                          color: c.mutedForeground,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    term!.meaning,
+                    style: TextStyle(
+                      fontFamily: 'Metropolis',
+                      fontFamilyFallback: kContentFontFallback,
+                      fontSize: 13,
+                      color: c.foreground.withValues(alpha: 0.85),
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 16),
 
@@ -467,39 +614,67 @@ class _PracticeStep extends StatelessWidget {
                   return Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      border: isLast ? null : Border(bottom: BorderSide(color: c.border)),
+                      border: isLast
+                          ? null
+                          : Border(bottom: BorderSide(color: c.border)),
                     ),
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Row(children: [
-                        Icon(_practiceTypeIcons[s.type] ?? Icons.circle_outlined, size: 18, color: c.foreground),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(s.text,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontFamily: 'Metropolis', fontFamilyFallback: kContentFontFallback, fontSize: 15, color: c.foreground)),
-                        ),
-                        NeoAudioPlayButton(audioUrl: s.audioUrl),
-                      ]),
-                      const SizedBox(height: 10),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: emojis.map((e) => GestureDetector(
-                          onTap: () => onRate(s.id, e.value),
-                          child: AnimatedScale(
-                            scale: myRating == e.value ? 1.25 : 1.0,
-                            duration: const Duration(milliseconds: 150),
-                            child: Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: BoxDecoration(
-                                color: myRating == e.value ? c.secondary : Colors.transparent,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Text(e.char, style: const TextStyle(fontSize: 24)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              _practiceTypeIcons[s.type] ??
+                                  Icons.circle_outlined,
+                              size: 18,
+                              color: c.foreground,
                             ),
-                          ),
-                        )).toList(),
-                      ),
-                    ]),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                s.text,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: 'Metropolis',
+                                  fontFamilyFallback: kContentFontFallback,
+                                  fontSize: 15,
+                                  color: c.foreground,
+                                ),
+                              ),
+                            ),
+                            NeoAudioPlayButton(audioUrl: s.audioUrl),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: emojis
+                              .map(
+                                (e) => GestureDetector(
+                                  onTap: () => onRate(s.id, e.value),
+                                  child: AnimatedScale(
+                                    scale: myRating == e.value ? 1.25 : 1.0,
+                                    duration: const Duration(milliseconds: 150),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: BoxDecoration(
+                                        color: myRating == e.value
+                                            ? c.secondary
+                                            : Colors.transparent,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Text(
+                                        e.char,
+                                        style: const TextStyle(fontSize: 24),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      ],
+                    ),
                   );
                 }).toList(),
               ),
@@ -507,21 +682,41 @@ class _PracticeStep extends StatelessWidget {
           ] else
             Container(
               padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(color: c.card, borderRadius: BorderRadius.circular(12), border: Border.all(color: c.border)),
-              child: Text('No practice suggestions available for your language yet. You can still apply.',
-                  style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: c.mutedForeground)),
+              decoration: BoxDecoration(
+                color: c.card,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: c.border),
+              ),
+              child: Text(
+                'No practice suggestions available for your language yet. You can still apply.',
+                style: TextStyle(
+                  fontFamily: 'Metropolis',
+                  fontSize: 13,
+                  color: c.mutedForeground,
+                ),
+              ),
             ),
 
           const SizedBox(height: 24),
           ElevatedButton(
             onPressed: hasInteracted ? onContinue : null,
             style: ElevatedButton.styleFrom(
-                backgroundColor: c.primary,
-                foregroundColor: c.primaryForeground,
-                disabledBackgroundColor: c.primary.withValues(alpha: 0.4),
-                minimumSize: const Size(double.infinity, 52),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-            child: const Text('Next', style: TextStyle(fontFamily: 'Metropolis', fontSize: 15, fontWeight: FontWeight.w600)),
+              backgroundColor: c.primary,
+              foregroundColor: c.primaryForeground,
+              disabledBackgroundColor: c.primary.withValues(alpha: 0.4),
+              minimumSize: const Size(double.infinity, 52),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text(
+              'Next',
+              style: TextStyle(
+                fontFamily: 'Metropolis',
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
           const SizedBox(height: 32),
         ],
@@ -542,9 +737,15 @@ class _FormStep extends StatelessWidget {
   final VoidCallback onSubmit;
 
   const _FormStep({
-    required this.formKey, required this.nameCtrl, required this.emailCtrl,
-    required this.phoneCtrl, required this.agreementAccepted, required this.submitting,
-    required this.c, required this.onAgreementChanged, required this.onSubmit,
+    required this.formKey,
+    required this.nameCtrl,
+    required this.emailCtrl,
+    required this.phoneCtrl,
+    required this.agreementAccepted,
+    required this.submitting,
+    required this.c,
+    required this.onAgreementChanged,
+    required this.onSubmit,
   });
 
   @override
@@ -557,43 +758,101 @@ class _FormStep extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(16),
             margin: const EdgeInsets.only(bottom: 20),
-            decoration: BoxDecoration(color: c.secondary, borderRadius: BorderRadius.circular(12), border: Border.all(color: c.border)),
-            child: Text('Step 2 of 2 — Application Form\nA member of our team will review your application.',
-                style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, color: c.mutedForeground)),
+            decoration: BoxDecoration(
+              color: c.secondary,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: c.border),
+            ),
+            child: Text(
+              'Step 2 of 2 — Application Form\nA member of our team will review your application.',
+              style: TextStyle(
+                fontFamily: 'Metropolis',
+                fontSize: 12,
+                color: c.mutedForeground,
+              ),
+            ),
           ),
-          _FormField(label: 'Full Name', controller: nameCtrl, c: c, validator: (v) => (v?.trim().length ?? 0) < 2 ? 'Name is required' : null),
+          _FormField(
+            label: 'Full Name',
+            controller: nameCtrl,
+            c: c,
+            validator: (v) =>
+                (v?.trim().length ?? 0) < 2 ? 'Name is required' : null,
+          ),
           const SizedBox(height: 12),
-          _FormField(label: 'Email Address', controller: emailCtrl, c: c, keyboardType: TextInputType.emailAddress,
-              validator: (v) => (v?.contains('@') ?? false) ? null : 'Enter a valid email'),
+          _FormField(
+            label: 'Email Address',
+            controller: emailCtrl,
+            c: c,
+            keyboardType: TextInputType.emailAddress,
+            validator: (v) =>
+                (v?.contains('@') ?? false) ? null : 'Enter a valid email',
+          ),
           const SizedBox(height: 12),
-          _FormField(label: 'Phone Number', controller: phoneCtrl, c: c, keyboardType: TextInputType.phone,
-              validator: (v) => (v?.trim().length ?? 0) < 5 ? 'Phone number is required' : null),
+          _FormField(
+            label: 'Phone Number',
+            controller: phoneCtrl,
+            c: c,
+            keyboardType: TextInputType.phone,
+            validator: (v) =>
+                (v?.trim().length ?? 0) < 5 ? 'Phone number is required' : null,
+          ),
           const SizedBox(height: 20),
           GestureDetector(
             onTap: () => onAgreementChanged(!agreementAccepted),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Checkbox(value: agreementAccepted, onChanged: onAgreementChanged, activeColor: c.primary),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Text('I agree to uphold community standards, rate fairly, and commit to regular participation as a Juror.',
-                      style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: c.foreground)),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Checkbox(
+                  value: agreementAccepted,
+                  onChanged: onAgreementChanged,
+                  activeColor: c.primary,
                 ),
-              ),
-            ]),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Text(
+                      'I agree to uphold community standards, rate fairly, and commit to regular participation as a Juror.',
+                      style: TextStyle(
+                        fontFamily: 'Metropolis',
+                        fontSize: 13,
+                        color: c.foreground,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 24),
           ElevatedButton(
             onPressed: submitting ? null : onSubmit,
             style: ElevatedButton.styleFrom(
-                backgroundColor: c.primary,
-                foregroundColor: c.primaryForeground,
-                minimumSize: const Size(double.infinity, 52),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              backgroundColor: c.primary,
+              foregroundColor: c.primaryForeground,
+              minimumSize: const Size(double.infinity, 52),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
             child: submitting
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : const Text('Submit Application', style: TextStyle(fontFamily: 'Metropolis', fontSize: 15, fontWeight: FontWeight.w600)),
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text(
+                    'Submit Application',
+                    style: TextStyle(
+                      fontFamily: 'Metropolis',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
           ),
           const SizedBox(height: 32),
         ],
@@ -608,28 +867,57 @@ class _FormField extends StatelessWidget {
   final AppColorScheme c;
   final TextInputType? keyboardType;
   final String? Function(String?)? validator;
-  const _FormField({required this.label, required this.controller, required this.c, this.keyboardType, this.validator});
+  const _FormField({
+    required this.label,
+    required this.controller,
+    required this.c,
+    this.keyboardType,
+    this.validator,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label, style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, fontWeight: FontWeight.w500, color: c.foreground)),
-      const SizedBox(height: 6),
-      TextFormField(
-        controller: controller,
-        keyboardType: keyboardType,
-        validator: validator,
-        style: TextStyle(fontFamily: 'Metropolis', color: c.foreground),
-        decoration: InputDecoration(
-          filled: true,
-          fillColor: c.card,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: c.border)),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: c.border)),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: c.primary)),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontFamily: 'Metropolis',
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: c.foreground,
+          ),
         ),
-      ),
-    ]);
+        const SizedBox(height: 6),
+        TextFormField(
+          controller: controller,
+          keyboardType: keyboardType,
+          validator: validator,
+          style: TextStyle(fontFamily: 'Metropolis', color: c.foreground),
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: c.card,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 12,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(color: c.border),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(color: c.border),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(color: c.primary),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -646,25 +934,57 @@ class _DoneView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 72, height: 72,
-              decoration: BoxDecoration(color: const Color(0xFF22C55E).withValues(alpha: 0.1), shape: BoxShape.circle),
-              child: const Icon(Icons.check_circle_outline, size: 36, color: Color(0xFF22C55E)),
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: const Color(0xFF22C55E).withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.check_circle_outline,
+                size: 36,
+                color: Color(0xFF22C55E),
+              ),
             ),
             const SizedBox(height: 20),
-            Text('Application submitted!', style: TextStyle(fontFamily: 'Parkinsans', fontSize: 20, fontWeight: FontWeight.w700, color: c.foreground)),
+            Text(
+              'Application submitted!',
+              style: TextStyle(
+                fontFamily: 'Parkinsans',
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: c.foreground,
+              ),
+            ),
             const SizedBox(height: 8),
-            Text('Our team will review your application. You\'ll receive a notification when a decision is made.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, color: c.mutedForeground)),
+            Text(
+              'Our team will review your application. You\'ll receive a notification when a decision is made.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Metropolis',
+                fontSize: 14,
+                color: c.mutedForeground,
+              ),
+            ),
             const SizedBox(height: 32),
             ElevatedButton(
               onPressed: () => Navigator.of(context).pop(),
               style: ElevatedButton.styleFrom(
-                  backgroundColor: c.primary,
-                  foregroundColor: c.primaryForeground,
-                  minimumSize: const Size(double.infinity, 52),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-              child: const Text('Done', style: TextStyle(fontFamily: 'Metropolis', fontSize: 15, fontWeight: FontWeight.w600)),
+                backgroundColor: c.primary,
+                foregroundColor: c.primaryForeground,
+                minimumSize: const Size(double.infinity, 52),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text(
+                'Done',
+                style: TextStyle(
+                  fontFamily: 'Metropolis',
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ],
         ),
@@ -686,16 +1006,38 @@ class _NotCuratorView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 64, height: 64,
-              decoration: BoxDecoration(color: c.secondary, shape: BoxShape.circle),
-              child: Icon(Icons.lock_outline, size: 30, color: c.mutedForeground),
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: c.secondary,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.lock_outline,
+                size: 30,
+                color: c.mutedForeground,
+              ),
             ),
             const SizedBox(height: 20),
-            Text('Not Available', style: TextStyle(fontFamily: 'Parkinsans', fontSize: 18, fontWeight: FontWeight.w600, color: c.foreground)),
+            Text(
+              'Not Available',
+              style: TextStyle(
+                fontFamily: 'Parkinsans',
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: c.foreground,
+              ),
+            ),
             const SizedBox(height: 8),
-            Text('Only curators can apply to become a Juror. Become a curator first to unlock this.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, color: c.mutedForeground)),
+            Text(
+              'Only curators can apply to become a Juror. Become a curator first to unlock this.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Metropolis',
+                fontSize: 14,
+                color: c.mutedForeground,
+              ),
+            ),
           ],
         ),
       ),
@@ -716,16 +1058,34 @@ class _AlreadyAppliedView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 64, height: 64,
-              decoration: BoxDecoration(color: c.secondary, shape: BoxShape.circle),
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: c.secondary,
+                shape: BoxShape.circle,
+              ),
               child: Icon(Icons.schedule, size: 30, color: c.mutedForeground),
             ),
             const SizedBox(height: 20),
-            Text('Application Pending', style: TextStyle(fontFamily: 'Parkinsans', fontSize: 18, fontWeight: FontWeight.w600, color: c.foreground)),
+            Text(
+              'Application Pending',
+              style: TextStyle(
+                fontFamily: 'Parkinsans',
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: c.foreground,
+              ),
+            ),
             const SizedBox(height: 8),
-            Text('You have already submitted a Juror application. Our team will review it and notify you of the decision.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, color: c.mutedForeground)),
+            Text(
+              'You have already submitted a Juror application. Our team will review it and notify you of the decision.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Metropolis',
+                fontSize: 14,
+                color: c.mutedForeground,
+              ),
+            ),
           ],
         ),
       ),
