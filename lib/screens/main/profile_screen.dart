@@ -20,12 +20,12 @@ class _ProfileData {
   });
 
   _ProfileData copyWith({bool? allowInAppNotifications}) => _ProfileData(
-        name: name,
-        cowryBalance: cowryBalance,
-        allowInAppNotifications:
-            allowInAppNotifications ?? this.allowInAppNotifications,
-        communityName: communityName,
-      );
+    name: name,
+    cowryBalance: cowryBalance,
+    allowInAppNotifications:
+        allowInAppNotifications ?? this.allowInAppNotifications,
+    communityName: communityName,
+  );
 }
 
 class _ProfileService {
@@ -61,7 +61,8 @@ class _ProfileService {
   Future<void> updateNotifications(String userId, bool value) async {
     await _db
         .from('user_profile')
-        .update({'allowInAppNotifications': value}).eq('userId', userId);
+        .update({'allowInAppNotifications': value})
+        .eq('userId', userId);
   }
 }
 
@@ -96,7 +97,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
     try {
       final data = await _service.loadProfile(userId);
-      if (mounted) setState(() { _data = data; _loading = false; });
+      if (mounted)
+        setState(() {
+          _data = data;
+          _loading = false;
+        });
     } catch (e) {
       debugPrint('Profile load error: $e');
       if (mounted) setState(() => _loading = false);
@@ -112,12 +117,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } catch (e) {
       setState(() => _data = _data?.copyWith(allowInAppNotifications: !value));
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Could not update preference',
-              style: TextStyle(fontFamily: 'Metropolis')),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+              'Could not update preference',
+              style: TextStyle(fontFamily: 'Metropolis'),
+            ),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        );
       }
     }
   }
@@ -157,9 +168,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: Divider(height: 1, color: c.border),
         ),
       ),
-      body: _loading
-          ? Center(child: CircularProgressIndicator(color: c.primary, strokeWidth: 2))
-          : _buildBody(context, c),
+      body: SafeArea(
+        child: _loading
+            ? Center(
+                child: CircularProgressIndicator(
+                  color: c.primary,
+                  strokeWidth: 2,
+                ),
+              )
+            : _buildBody(context, c),
+      ),
     );
   }
 
@@ -172,12 +190,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ? _data!.name!
         : email.split('@').first;
     final initials = _initials(displayName);
-    final joinedAt =
-        user?.createdAt != null ? DateTime.tryParse(user!.createdAt) : null;
+    final joinedAt = user?.createdAt != null
+        ? DateTime.tryParse(user!.createdAt)
+        : null;
 
     return RefreshIndicator(
       onRefresh: () async {
-        setState(() { _loadDone = false; _loading = true; });
+        setState(() {
+          _loadDone = false;
+          _loading = true;
+        });
         await _load();
       },
       color: c.primary,
@@ -194,7 +216,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 color: c.card,
                 borderRadius: BorderRadius.circular(32),
                 border: Border.all(color: c.border),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.06), blurRadius: 15, offset: const Offset(0, 2))],
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.06),
+                    blurRadius: 15,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
               child: Column(
                 children: [
@@ -206,24 +234,45 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       shape: BoxShape.circle,
                       color: const Color(0xFF9C62D9),
                       border: Border.all(color: c.card, width: 4),
-                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 10, offset: const Offset(0, 2))],
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.12),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
                     child: Center(
                       child: Text(
                         initials,
-                        style: const TextStyle(fontFamily: 'Parkinsans', fontSize: 28, fontWeight: FontWeight.w600, color: Colors.white),
+                        style: const TextStyle(
+                          fontFamily: 'Parkinsans',
+                          fontSize: 28,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),
                   const SizedBox(height: 14),
                   Text(
                     displayName,
-                    style: TextStyle(fontFamily: 'Parkinsans', fontFamilyFallback: kContentFontFallback, fontSize: 20, fontWeight: FontWeight.w600, color: c.foreground),
+                    style: TextStyle(
+                      fontFamily: 'Parkinsans',
+                      fontFamilyFallback: kContentFontFallback,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      color: c.foreground,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     email,
-                    style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: c.mutedForeground),
+                    style: TextStyle(
+                      fontFamily: 'Metropolis',
+                      fontSize: 13,
+                      color: c.mutedForeground,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Divider(color: c.border, height: 1),
@@ -231,7 +280,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   if (joinedAt != null)
                     Text(
                       'Member since ${_formatDate(joinedAt)}',
-                      style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, color: c.mutedForeground),
+                      style: TextStyle(
+                        fontFamily: 'Metropolis',
+                        fontSize: 12,
+                        color: c.mutedForeground,
+                      ),
                     ),
                 ],
               ),
@@ -246,7 +299,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 color: c.card,
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(color: c.border),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.06), blurRadius: 15, offset: const Offset(0, 2))],
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.06),
+                    blurRadius: 15,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
               child: Row(
                 children: [
@@ -257,11 +316,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       color: const Color(0xFFFBBF24),
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: isDark ? const Color(0xFFF59E0B).withValues(alpha: 0.3) : const Color(0xFFFDE68A),
+                        color: isDark
+                            ? const Color(0xFFF59E0B).withValues(alpha: 0.3)
+                            : const Color(0xFFFDE68A),
                         width: 4,
                       ),
                     ),
-                    child: const Icon(Icons.emoji_events, color: Color(0xFF1A1A1A), size: 22),
+                    child: const Icon(
+                      Icons.emoji_events,
+                      color: Color(0xFF1A1A1A),
+                      size: 22,
+                    ),
                   ),
                   const SizedBox(width: 14),
                   Column(
@@ -269,11 +334,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     children: [
                       Text(
                         '${_data?.cowryBalance ?? 0} ${(_data?.cowryBalance ?? 0) == 1 ? 'Cowry' : 'Cowries'} 🐚',
-                        style: TextStyle(fontFamily: 'Parkinsans', fontSize: 18, fontWeight: FontWeight.w600, color: c.foreground),
+                        style: TextStyle(
+                          fontFamily: 'Parkinsans',
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: c.foreground,
+                        ),
                       ),
                       Text(
                         'Total Experience Points',
-                        style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, color: c.mutedForeground),
+                        style: TextStyle(
+                          fontFamily: 'Metropolis',
+                          fontSize: 12,
+                          color: c.mutedForeground,
+                        ),
                       ),
                     ],
                   ),
@@ -288,7 +362,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 color: c.card,
                 borderRadius: BorderRadius.circular(32),
                 border: Border.all(color: c.border),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.06), blurRadius: 15, offset: const Offset(0, 2))],
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.06),
+                    blurRadius: 15,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -299,16 +379,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     child: Row(
                       children: [
                         Container(
-                          width: 40, height: 40,
-                          decoration: BoxDecoration(color: c.secondary, shape: BoxShape.circle),
-                          child: Icon(Icons.settings_outlined, size: 20, color: c.mutedForeground),
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: c.secondary,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.settings_outlined,
+                            size: 20,
+                            color: c.mutedForeground,
+                          ),
                         ),
                         const SizedBox(width: 12),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Settings', style: TextStyle(fontFamily: 'Parkinsans', fontSize: 18, fontWeight: FontWeight.w600, color: c.foreground)),
-                            Text('Manage preferences and notifications', style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, color: c.mutedForeground)),
+                            Text(
+                              'Settings',
+                              style: TextStyle(
+                                fontFamily: 'Parkinsans',
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                color: c.foreground,
+                              ),
+                            ),
+                            Text(
+                              'Manage preferences and notifications',
+                              style: TextStyle(
+                                fontFamily: 'Metropolis',
+                                fontSize: 12,
+                                color: c.mutedForeground,
+                              ),
+                            ),
                           ],
                         ),
                       ],
@@ -320,8 +423,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _GroupLabel('PREFERENCES', c: c),
                   _SettingsTile(
                     icon: Icons.list_alt_outlined,
-                    iconBg: isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.3) : const Color(0xFFEFF6FF),
-                    iconColor: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
+                    iconBg: isDark
+                        ? const Color(0xFF1E3A8A).withValues(alpha: 0.3)
+                        : const Color(0xFFEFF6FF),
+                    iconColor: isDark
+                        ? const Color(0xFF60A5FA)
+                        : const Color(0xFF2563EB),
                     label: 'My Word Requests',
                     subtitle: 'Track words you submitted for translation',
                     onTap: () => Navigator.of(context).pushNamed('/request'),
@@ -342,9 +449,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     c: c,
                   ),
                   _SettingsTile(
-                    icon: theme.isDark ? Icons.wb_sunny_rounded : Icons.dark_mode_outlined,
+                    icon: theme.isDark
+                        ? Icons.wb_sunny_rounded
+                        : Icons.dark_mode_outlined,
                     iconBg: c.secondary,
-                    iconColor: theme.isDark ? const Color(0xFFF59E0B) : c.mutedForeground,
+                    iconColor: theme.isDark
+                        ? const Color(0xFFF59E0B)
+                        : c.mutedForeground,
                     label: 'Switch to Dark Mode',
                     subtitle: 'Switch between light and dark themes',
                     trailing: Switch(
@@ -367,8 +478,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   _SettingsTile(
                     icon: Icons.menu_book_outlined,
-                    iconBg: isDark ? const Color(0xFF581C87).withValues(alpha: 0.3) : const Color(0xFFFAF5FF),
-                    iconColor: isDark ? const Color(0xFFA855F7) : const Color(0xFF9333EA),
+                    iconBg: isDark
+                        ? const Color(0xFF581C87).withValues(alpha: 0.3)
+                        : const Color(0xFFFAF5FF),
+                    iconColor: isDark
+                        ? const Color(0xFFA855F7)
+                        : const Color(0xFF9333EA),
                     label: 'Community Guidelines & Notes',
                     onTap: () {},
                     c: c,
@@ -379,7 +494,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   // MORE (collapsible)
                   _MoreToggle(
                     expanded: _moreExpanded,
-                    onToggle: () => setState(() => _moreExpanded = !_moreExpanded),
+                    onToggle: () =>
+                        setState(() => _moreExpanded = !_moreExpanded),
                     c: c,
                   ),
                   if (_moreExpanded) ...[
@@ -388,7 +504,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       iconBg: c.secondary,
                       iconColor: c.mutedForeground,
                       label: 'Privacy Settings',
-                      onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PrivacySettingsScreen())),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const PrivacySettingsScreen(),
+                        ),
+                      ),
                       c: c,
                     ),
                     _SettingsTile(
@@ -396,7 +516,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       iconBg: c.secondary,
                       iconColor: c.mutedForeground,
                       label: 'Legal Hub',
-                      onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const LegalHubScreen())),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const LegalHubScreen(),
+                        ),
+                      ),
                       c: c,
                     ),
                   ],
@@ -405,31 +529,52 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                   // Log Out
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     child: InkWell(
                       onTap: () async {
                         await AuthProvider.of(context).logout();
                         if (context.mounted) {
-                          Navigator.of(context).pushNamedAndRemoveUntil('/signin', (route) => false);
+                          Navigator.of(context).pushNamedAndRemoveUntil(
+                            '/signin',
+                            (route) => false,
+                          );
                         }
                       },
                       borderRadius: BorderRadius.circular(12),
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
+                        ),
                         child: Row(
                           children: [
                             Container(
-                              width: 32, height: 32,
+                              width: 32,
+                              height: 32,
                               decoration: BoxDecoration(
-                                color: Colors.red.withValues(alpha: isDark ? 0.2 : 0.08),
+                                color: Colors.red.withValues(
+                                  alpha: isDark ? 0.2 : 0.08,
+                                ),
                                 borderRadius: BorderRadius.circular(8),
                               ),
-                              child: const Icon(Icons.logout, size: 18, color: Colors.red),
+                              child: const Icon(
+                                Icons.logout,
+                                size: 18,
+                                color: Colors.red,
+                              ),
                             ),
                             const SizedBox(width: 12),
                             const Text(
                               'Log Out',
-                              style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, fontWeight: FontWeight.w600, color: Colors.red),
+                              style: TextStyle(
+                                fontFamily: 'Metropolis',
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.red,
+                              ),
                             ),
                           ],
                         ),
@@ -454,7 +599,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   static String _formatDate(DateTime dt) {
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
     return '${months[dt.month - 1]} ${dt.year}';
   }
 }
@@ -469,42 +627,68 @@ class _CommunityTile extends StatelessWidget {
   final AppColorScheme c;
   final bool isDark;
 
-  const _CommunityTile({required this.communityName, required this.c, required this.isDark});
+  const _CommunityTile({
+    required this.communityName,
+    required this.c,
+    required this.isDark,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            children: [
-              Container(
-                width: 32, height: 32,
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.3) : const Color(0xFFEFF6FF),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(Icons.campaign_outlined, size: 16, color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB)),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: isDark
+                    ? const Color(0xFF1E3A8A).withValues(alpha: 0.3)
+                    : const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(8),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text('Awalingo Community', style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, fontWeight: FontWeight.w500, color: c.foreground)),
+              child: Icon(
+                Icons.campaign_outlined,
+                size: 16,
+                color: isDark
+                    ? const Color(0xFF60A5FA)
+                    : const Color(0xFF2563EB),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: c.secondary,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  communityName ?? 'No Community',
-                  style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, fontWeight: FontWeight.w500, color: c.mutedForeground),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Awalingo Community',
+                style: TextStyle(
+                  fontFamily: 'Metropolis',
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: c.foreground,
                 ),
               ),
-            ],
-          ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: c.secondary,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                communityName ?? 'No Community',
+                style: TextStyle(
+                  fontFamily: 'Metropolis',
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: c.mutedForeground,
+                ),
+              ),
+            ),
+          ],
         ),
+      ),
     );
   }
 }
@@ -516,7 +700,11 @@ class _MoreToggle extends StatelessWidget {
   final VoidCallback onToggle;
   final AppColorScheme c;
 
-  const _MoreToggle({required this.expanded, required this.onToggle, required this.c});
+  const _MoreToggle({
+    required this.expanded,
+    required this.onToggle,
+    required this.c,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -530,9 +718,21 @@ class _MoreToggle extends StatelessWidget {
           child: Row(
             children: [
               Expanded(
-                child: Text('More', style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, fontWeight: FontWeight.w500, color: c.foreground)),
+                child: Text(
+                  'More',
+                  style: TextStyle(
+                    fontFamily: 'Metropolis',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: c.foreground,
+                  ),
+                ),
               ),
-              Icon(expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 18, color: c.mutedForeground),
+              Icon(
+                expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                size: 18,
+                color: c.mutedForeground,
+              ),
             ],
           ),
         ),
@@ -552,7 +752,16 @@ class _GroupLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
-      child: Text(text, style: TextStyle(fontFamily: 'Metropolis', fontSize: 11, fontWeight: FontWeight.w600, color: c.mutedForeground, letterSpacing: 0.8)),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontFamily: 'Metropolis',
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: c.mutedForeground,
+          letterSpacing: 0.8,
+        ),
+      ),
     );
   }
 }
@@ -590,8 +799,12 @@ class _SettingsTile extends StatelessWidget {
           child: Row(
             children: [
               Container(
-                width: 32, height: 32,
-                decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(8)),
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  borderRadius: BorderRadius.circular(8),
+                ),
                 child: Icon(icon, size: 16, color: iconColor),
               ),
               const SizedBox(width: 12),
@@ -599,13 +812,29 @@ class _SettingsTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(label, style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, fontWeight: FontWeight.w500, color: c.foreground)),
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontFamily: 'Metropolis',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: c.foreground,
+                      ),
+                    ),
                     if (subtitle != null)
-                      Text(subtitle!, style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, color: c.mutedForeground)),
+                      Text(
+                        subtitle!,
+                        style: TextStyle(
+                          fontFamily: 'Metropolis',
+                          fontSize: 12,
+                          color: c.mutedForeground,
+                        ),
+                      ),
                   ],
                 ),
               ),
-              if (trailing != null) trailing!
+              if (trailing != null)
+                trailing!
               else if (onTap != null)
                 Icon(Icons.chevron_right, size: 18, color: c.mutedForeground),
             ],
