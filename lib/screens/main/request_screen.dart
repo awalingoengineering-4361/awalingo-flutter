@@ -28,6 +28,13 @@ class _Bootstrap {
   });
 }
 
+// Carries the exact web copy (word-requests submitRequest, dictionary.ts) so
+// the UI can show it verbatim instead of a generic "failed" message.
+class _RequestSubmitException implements Exception {
+  final String message;
+  const _RequestSubmitException(this.message);
+}
+
 // ── Service ───────────────────────────────────────────────────────────────────
 
 class _RequestService {
@@ -75,9 +82,42 @@ class _RequestService {
     required int targetLanguageId,
     required int partOfSpeechId,
   }) async {
+    final trimmedWord = word.trim();
+    final trimmedMeaning = meaning.trim();
+
+    // Mirrors submitRequest's two pre-insert checks (dictionary.ts) so
+    // duplicates surface their exact reason instead of a generic failure.
+    final existingRequest = await _db
+        .from('translation_requests')
+        .select('id')
+        .ilike('word', trimmedWord)
+        .ilike('meaning', trimmedMeaning)
+        .eq('sourceLanguageId', sourceLanguageId)
+        .eq('targetLanguageId', targetLanguageId)
+        .eq('partOfSpeechId', partOfSpeechId)
+        .maybeSingle();
+    if (existingRequest != null) {
+      throw const _RequestSubmitException(
+        'This word with the same meaning has already been requested. Please be patient.',
+      );
+    }
+
+    final existingTerm = await _db
+        .from('terms')
+        .select('id')
+        .ilike('text', trimmedWord)
+        .eq('languageId', sourceLanguageId)
+        .eq('partOfSpeechId', partOfSpeechId)
+        .maybeSingle();
+    if (existingTerm != null) {
+      throw const _RequestSubmitException(
+        'This word already exists in the dictionary for this part of speech.',
+      );
+    }
+
     await _db.from('translation_requests').insert({
-      'word': word.trim(),
-      'meaning': meaning.trim(),
+      'word': trimmedWord,
+      'meaning': trimmedMeaning,
       'sourceLanguageId': sourceLanguageId,
       'targetLanguageId': targetLanguageId,
       'partOfSpeechId': partOfSpeechId,
@@ -179,11 +219,17 @@ class _RequestScreenState extends State<RequestScreen> {
         partOfSpeechId: _selectedPosId!,
       );
       if (mounted) setState(() { _submitting = false; _submitted = true; });
+    } on _RequestSubmitException catch (e) {
+      if (mounted) {
+        setState(() => _submitting = false);
+        ScaffoldMessenger.of(context).showSnackBar(_snack(e.message));
+      }
     } catch (e) {
       debugPrint('Request submit error: $e');
       if (mounted) {
         setState(() => _submitting = false);
-        ScaffoldMessenger.of(context).showSnackBar(_snack('Submission failed. Please try again.'));
+        // Mirrors submitRequest's catch-all copy (dictionary.ts).
+        ScaffoldMessenger.of(context).showSnackBar(_snack('Database Error: Failed to submit request.'));
       }
     }
   }

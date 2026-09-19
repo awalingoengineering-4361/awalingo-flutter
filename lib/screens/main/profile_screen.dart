@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
 import '../../services/theme_notifier.dart';
 import 'privacy_settings_screen.dart';
-import 'legal_hub_screen.dart';
 
 class _ProfileData {
   final String? name;
@@ -130,6 +131,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         );
       }
+    }
+  }
+
+  // Opens the real /legal page (LegalHubPage in neolingo) — a single GDPR
+  // disclosure page (data controller, data processed, retention, etc.), not
+  // a hub of sub-pages. There's no menu entry for Terms/FAQ/About/Team on
+  // the authenticated web app at all — those only exist on the public
+  // marketing site — so this doesn't link out to them either.
+  Future<void> _openLegalHub(BuildContext context) async {
+    final webBaseUrl = dotenv.env['WEB_BASE_URL'] ?? '';
+    final uri = Uri.parse('$webBaseUrl/legal');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not open page.', style: TextStyle(fontFamily: 'Metropolis')),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -422,19 +443,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   // PREFERENCES
                   _GroupLabel('PREFERENCES', c: c),
                   _SettingsTile(
-                    icon: Icons.list_alt_outlined,
-                    iconBg: isDark
-                        ? const Color(0xFF1E3A8A).withValues(alpha: 0.3)
-                        : const Color(0xFFEFF6FF),
-                    iconColor: isDark
-                        ? const Color(0xFF60A5FA)
-                        : const Color(0xFF2563EB),
-                    label: 'My Word Requests',
-                    subtitle: 'Track words you submitted for translation',
-                    onTap: () => Navigator.of(context).pushNamed('/request'),
-                    c: c,
-                  ),
-                  _SettingsTile(
                     icon: Icons.notifications_outlined,
                     iconBg: c.secondary,
                     iconColor: c.mutedForeground,
@@ -516,11 +524,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       iconBg: c.secondary,
                       iconColor: c.mutedForeground,
                       label: 'Legal Hub',
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const LegalHubScreen(),
-                        ),
-                      ),
+                      onTap: () => _openLegalHub(context),
                       c: c,
                     ),
                   ],

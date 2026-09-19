@@ -3,6 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
+import '../../services/theme_notifier.dart';
+
+// Mirrors CURATOR_TEST_COOLDOWN_DAYS default (quiz.ts) — used only for the
+// result screen's copy, since the eligibility check itself already lives in
+// become_curator_screen.dart.
+const _kCuratorTestCooldownDays = 7;
 
 // ── Models ────────────────────────────────────────────────────────────────────
 
@@ -160,6 +166,8 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
   final Map<int, String> _answers = {};
   bool? _passed;
   int _score = 0;
+  bool _timedOut = false;
+  String? _fetchError;
 
   // Timer
   static const _totalSeconds = 600; // 10 minutes
@@ -190,12 +198,24 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
         setState(() {
           _questions = questions;
           _loading = false;
+          if (questions.isEmpty) {
+            // Mirrors curator-test/page.tsx's empty-questions fetchError copy.
+            _fetchError =
+                'No questions are currently available for your target language. Please try again later.';
+          }
         });
         if (questions.isNotEmpty) _startTimer();
       }
     } catch (e) {
       debugPrint('CuratorTest load: $e');
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          // Mirrors curator-test/page.tsx's thrown-error fetchError copy.
+          _fetchError =
+              'Failed to load questions. Please check your target language settings.';
+        });
+      }
     }
   }
 
@@ -205,7 +225,7 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
       setState(() => _secondsLeft--);
       if (_secondsLeft <= 0) {
         _timer?.cancel();
-        _submit();
+        _submit(timedOut: true);
       }
     });
   }
@@ -239,7 +259,7 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
     }
   }
 
-  Future<void> _submit() async {
+  Future<void> _submit({bool timedOut = false}) async {
     _timer?.cancel();
     final userId = AuthProvider.of(context).user?.id;
     if (userId == null || _submitting) return;
@@ -252,13 +272,15 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
       score,
       _questions.length,
     );
-    if (mounted)
+    if (mounted) {
       setState(() {
         _score = score;
         _passed = passed;
+        _timedOut = timedOut;
         _done = true;
         _submitting = false;
       });
+    }
   }
 
   String get _timerLabel {
@@ -282,176 +304,238 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
       );
     }
 
+    // Mirrors curator-test/page.tsx's `fetchError || questions.length === 0`
+    // branch: an "Unable to Load Test" card with a "Return to Home" button.
     if (_questions.isEmpty) {
       return Scaffold(
         backgroundColor: c.background,
-        appBar: AppBar(
-          backgroundColor: c.card,
-          elevation: 0,
-          leading: BackButton(color: c.foreground),
-        ),
-        body: Center(
-          child: Text(
-            'No questions available for your language yet.',
-            style: TextStyle(
-              fontFamily: 'Metropolis',
-              fontSize: 14,
-              color: c.mutedForeground,
+        body: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(maxWidth: 400),
+                padding: const EdgeInsets.all(32),
+                decoration: BoxDecoration(
+                  color: c.card,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: c.border),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline, size: 48, color: Color(0xFFF43F5E)),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Unable to Load Test',
+                      style: TextStyle(fontFamily: 'Parkinsans', fontSize: 18, fontWeight: FontWeight.w600, color: c.foreground),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _fetchError ?? 'An unexpected error occurred.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, color: c.mutedForeground),
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton(
+                      onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst || r.settings.name == '/home'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: c.primary,
+                        foregroundColor: c.primaryForeground,
+                        minimumSize: const Size(double.infinity, 48),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('Return to Home', style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, fontWeight: FontWeight.w600)),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),
       );
     }
 
-    if (_done)
+    if (_done) {
       return _ResultView(
         passed: _passed!,
+        timedOut: _timedOut,
         score: _score,
         total: _questions.length,
         c: c,
       );
+    }
 
     final q = _questions[_current];
     final answered = _answers[_current];
+    final theme = ThemeProvider.of(context);
+    final isDark = theme.isDark;
+    final isLastQuestion = _current == _questions.length - 1;
 
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (_, __) => _handleBack(),
       child: Scaffold(
         backgroundColor: c.background,
-        appBar: AppBar(
-          backgroundColor: c.card,
-          elevation: 0,
-          leading: IconButton(
-            icon: Icon(Icons.arrow_back, color: c.foreground),
-            onPressed: _submitting ? null : _handleBack,
-          ),
-          title: Row(
-            children: [
-              Expanded(
-                child: LinearProgressIndicator(
-                  value: (_current + 1) / _questions.length,
-                  color: c.primary,
-                  backgroundColor: c.border,
-                  minHeight: 4,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                '${_current + 1}/${_questions.length}',
-                style: TextStyle(
-                  fontFamily: 'Metropolis',
-                  fontSize: 13,
-                  color: c.mutedForeground,
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            Container(
-              margin: const EdgeInsets.only(right: 12),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: _isTimeLow
-                    ? const Color(0xFFEF4444).withValues(alpha: 0.1)
-                    : c.secondary,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                _timerLabel,
-                style: TextStyle(
-                  fontFamily: 'Metropolis',
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: _isTimeLow ? const Color(0xFFEF4444) : c.foreground,
-                ),
-              ),
-            ),
-          ],
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(1),
-            child: Divider(height: 1, color: c.border),
-          ),
-        ),
         body: SafeArea(
           child: Column(
             children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Question ${_current + 1}',
-                        style: TextStyle(
-                          fontFamily: 'Metropolis',
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: c.mutedForeground,
-                          letterSpacing: 0.5,
+              // Header — mirrors curator-test/page.tsx's <header>: back +
+              // theme toggle on the left, a standalone timer badge on the
+              // right. No progress bar here — that lives inside the card.
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 16, 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(children: [
+                      IconButton(
+                        icon: Icon(Icons.arrow_back, color: c.foreground),
+                        onPressed: _submitting ? null : _handleBack,
+                      ),
+                      GestureDetector(
+                        onTap: theme.toggle,
+                        child: Container(
+                          width: 36, height: 36,
+                          decoration: BoxDecoration(color: c.secondary, borderRadius: BorderRadius.circular(8)),
+                          child: Icon(
+                            isDark ? Icons.wb_sunny_rounded : Icons.dark_mode_outlined,
+                            size: 18,
+                            color: isDark ? const Color(0xFFF59E0B) : c.mutedForeground,
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        q.text,
-                        style: TextStyle(
-                          fontFamily: 'Parkinsans',
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: c.foreground,
-                        ),
+                    ]),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _isTimeLow ? const Color(0xFFEF4444).withValues(alpha: 0.1) : c.card,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: _isTimeLow ? const Color(0xFFFECACA) : c.border),
                       ),
-                      const SizedBox(height: 24),
-                      for (final opt in q.options)
-                        _OptionTile(
-                          badge: opt.label,
-                          label: opt.value,
-                          selected: answered == opt.value,
-                          onTap: () => _answer(opt.value),
-                          c: c,
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.schedule, size: 18, color: _isTimeLow ? const Color(0xFFEF4444) : c.mutedForeground),
+                        const SizedBox(width: 8),
+                        Text(
+                          _timerLabel,
+                          style: TextStyle(
+                            fontFamily: 'Metropolis',
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: _isTimeLow ? const Color(0xFFEF4444) : c.foreground,
+                          ),
                         ),
-                    ],
-                  ),
+                      ]),
+                    ),
+                  ],
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-                decoration: BoxDecoration(
-                  color: c.card,
-                  border: Border(top: BorderSide(color: c.border)),
-                ),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: answered == null ? null : _next,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: c.primary,
-                      foregroundColor: c.primaryForeground,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+                  child: Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: c.card,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: c.border),
                     ),
-                    child: _submitting
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Card header — logo + title + subtitle, matching
+                        // curator-test/page.tsx's "Card Header" block.
+                        Container(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: c.border))),
+                          child: Column(children: [
+                            Image.asset(
+                              isDark ? 'assets/branding/logo-wordmark-dark.png' : 'assets/branding/logo-wordmark-light.png',
+                              height: 40,
+                              errorBuilder: (_, __, ___) => Text('AWALINGO',
+                                  style: TextStyle(fontFamily: 'Parkinsans', fontWeight: FontWeight.bold, color: c.foreground)),
                             ),
-                          )
-                        : Text(
-                            _current == _questions.length - 1
-                                ? 'Submit'
-                                : 'Next',
-                            style: const TextStyle(
-                              fontFamily: 'Metropolis',
-                              fontWeight: FontWeight.w600,
-                              fontSize: 15,
+                            const SizedBox(height: 12),
+                            Text('Curator Quiz',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(fontFamily: 'Parkinsans', fontSize: 18, fontWeight: FontWeight.w600, color: c.foreground)),
+                            const SizedBox(height: 6),
+                            Text('Provide correct answers to become an Awalingo Curator.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: c.mutedForeground)),
+                          ]),
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Progress — "Question X of Y" + a segmented bar per
+                        // question, matching the web exactly (not a single
+                        // continuous progress bar).
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('Question ${_current + 1} of ${_questions.length}',
+                                style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, fontWeight: FontWeight.w600, color: c.mutedForeground)),
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.only(left: 16),
+                                child: Row(
+                                  children: [
+                                    for (var i = 0; i < _questions.length; i++) ...[
+                                      if (i > 0) const SizedBox(width: 4),
+                                      Expanded(
+                                        child: Container(
+                                          height: 6,
+                                          decoration: BoxDecoration(
+                                            color: i <= _current ? c.foreground : c.border,
+                                            borderRadius: BorderRadius.circular(999),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
                             ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+
+                        Text(
+                          q.text,
+                          style: TextStyle(fontFamily: 'Parkinsans', fontSize: 19, fontWeight: FontWeight.w600, height: 1.4, color: c.foreground),
+                        ),
+                        const SizedBox(height: 20),
+
+                        for (final opt in q.options)
+                          _OptionTile(
+                            badge: opt.label,
+                            label: opt.value,
+                            selected: answered == opt.value,
+                            onTap: () => _answer(opt.value),
+                            c: c,
                           ),
+                        const SizedBox(height: 8),
+
+                        ElevatedButton(
+                          onPressed: answered == null || _submitting ? null : _next,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: c.foreground,
+                            foregroundColor: c.background,
+                            disabledBackgroundColor: c.secondary,
+                            disabledForegroundColor: c.mutedForeground,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: const StadiumBorder(),
+                            elevation: 0,
+                          ),
+                          // "Sumitting..." mirrors the web's copy verbatim (a typo in the source).
+                          child: _submitting
+                              ? Text('Sumitting...', style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600, fontSize: 16, color: c.background))
+                              : Text(isLastQuestion ? 'Submit Test' : 'Next Question',
+                                  style: const TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600, fontSize: 16)),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -470,7 +554,7 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
         backgroundColor: c.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
-          'Exit test?',
+          'End the test?',
           style: TextStyle(
             fontFamily: 'Parkinsans',
             fontSize: 17,
@@ -478,18 +562,18 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
           ),
         ),
         content: Text(
-          'Your progress will be lost and you will not receive a score.',
+          'Going back will end your current test session. Your progress will be lost.',
           style: TextStyle(fontFamily: 'Metropolis', color: c.mutedForeground),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text('Stay', style: TextStyle(color: c.foreground)),
+            child: Text('Keep going', style: TextStyle(color: c.foreground)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: const Text(
-              'Exit',
+              'End test',
               style: TextStyle(color: Color(0xFFEF4444)),
             ),
           ),
@@ -576,109 +660,111 @@ class _OptionTile extends StatelessWidget {
 
 // ── Result View ───────────────────────────────────────────────────────────────
 
+// Mirrors curator-test/result/page.tsx exactly: a hero illustration (real
+// asset, not an icon-in-circle), copy that differs across passed/timedOut/
+// failed, "Score: X/Y" (not a percentage), and a single "Go Home" pill button.
 class _ResultView extends StatelessWidget {
   final bool passed;
+  final bool timedOut;
   final int score;
   final int total;
   final AppColorScheme c;
   const _ResultView({
     required this.passed,
+    required this.timedOut,
     required this.score,
     required this.total,
     required this.c,
   });
 
+  String get _heading {
+    if (passed) return 'You passed!!';
+    if (timedOut) return 'Time is up!';
+    return 'Test failure.';
+  }
+
+  String get _body {
+    if (passed) {
+      return 'You have successfully passed the quiz. Congratulations, you are now an Awalingo Curator!';
+    }
+    if (timedOut) {
+      return 'You ran out of time before completing the quiz. Please try again in $_kCuratorTestCooldownDays days.';
+    }
+    return "Sorry, you didn't quite make it this time.  Please continue to explore your language community and kindly take the quiz again in $_kCuratorTestCooldownDays days.";
+  }
+
   @override
   Widget build(BuildContext context) {
-    final pct = total > 0 ? (score / total * 100).round() : 0;
-    final color = passed ? const Color(0xFF22C55E) : const Color(0xFFEF4444);
+    final isDark = ThemeProvider.of(context).isDark;
+    final illustration = passed
+        ? (isDark ? 'assets/illustrations/curator-test-passed-white.png' : 'assets/illustrations/curator-test-passed-black.png')
+        : (isDark ? 'assets/illustrations/curator-test-failed-white.png' : 'assets/illustrations/curator-test-failed-black.png');
 
     return Scaffold(
       backgroundColor: c.background,
       body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    passed ? Icons.emoji_events_outlined : Icons.close,
-                    size: 40,
-                    color: color,
-                  ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+              child: Row(children: [
+                IconButton(
+                  icon: Icon(Icons.arrow_back, color: c.foreground),
+                  onPressed: () => Navigator.of(context).pop(),
                 ),
-                const SizedBox(height: 24),
-                Text(
-                  passed ? '🎉 You passed!' : 'Not quite this time',
-                  style: TextStyle(
-                    fontFamily: 'Parkinsans',
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    color: c.foreground,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '$score / $total correct ($pct%)',
-                  style: TextStyle(
-                    fontFamily: 'Metropolis',
-                    fontSize: 15,
-                    color: c.mutedForeground,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: c.card,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: c.border),
-                  ),
-                  child: Text(
-                    passed
-                        ? 'Congratulations! You\'ve earned the Curator role. Restart the app to see your new badge and start translating words.'
-                        : 'You need 70% to pass. Review the community language and try again in 7 days.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontFamily: 'Metropolis',
-                      fontSize: 13,
-                      color: c.mutedForeground,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 32),
-                ElevatedButton(
-                  onPressed: () => Navigator.of(
-                    context,
-                  ).popUntil((r) => r.isFirst || r.settings.name == '/home'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: c.primary,
-                    foregroundColor: c.primaryForeground,
-                    minimumSize: const Size(double.infinity, 52),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text(
-                    'Back to Home',
-                    style: TextStyle(
-                      fontFamily: 'Metropolis',
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
+              ]),
             ),
-          ),
+            Expanded(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Image.asset(illustration, height: 220, errorBuilder: (_, __, ___) => Icon(
+                          passed ? Icons.emoji_events_outlined : Icons.close,
+                          size: 96,
+                          color: passed ? const Color(0xFF22C55E) : const Color(0xFFEF4444))),
+                      const SizedBox(height: 24),
+                      Text(
+                        _heading,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontFamily: 'Parkinsans', fontSize: 26, fontWeight: FontWeight.w700, color: c.foreground),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        _body,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontFamily: 'Metropolis', fontSize: 15, height: 1.5, color: c.mutedForeground),
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        'Score: $score/ $total',
+                        style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: c.mutedForeground),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+              child: ElevatedButton(
+                onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst || r.settings.name == '/home'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: c.foreground,
+                  foregroundColor: c.background,
+                  minimumSize: const Size(double.infinity, 56),
+                  shape: const StadiumBorder(),
+                  elevation: 0,
+                ),
+                child: const Text(
+                  'Go Home',
+                  style: TextStyle(fontFamily: 'Metropolis', fontSize: 17, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
