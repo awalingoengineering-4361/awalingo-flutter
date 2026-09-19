@@ -4,8 +4,7 @@ import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
 import 'curator_test_screen.dart';
 
-// TEMPORARY: flip back to true to restore the 7-day retake cooldown.
-const bool _kEnableCuratorTestCooldown = false;
+const bool _kEnableCuratorTestCooldown = true;
 
 // ── Service ───────────────────────────────────────────────────────────────────
 

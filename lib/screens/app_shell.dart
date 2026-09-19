@@ -68,13 +68,23 @@ class _AppShellState extends State<AppShell> {
         return;
       }
     }
+    // The Menu tab has its own nested Navigator (see _menuNavKey below) so
+    // sub-pages like AwaDiko stay within the shell — _currentTab never
+    // actually leaves NavTab.menu while one of those is open, so tapping
+    // "Menu" again was just a same-value setState that did nothing. Pop
+    // that nested stack back to MenuScreen instead, matching the standard
+    // "tap the active tab to return to its root" behavior.
+    if (tab == NavTab.menu && _currentTab == NavTab.menu) {
+      _menuNavKey.currentState?.popUntil((r) => r.isFirst);
+      return;
+    }
     setState(() => _currentTab = tab);
   }
 
   Widget get _currentScreen {
     switch (_currentTab) {
       case NavTab.quiz:
-        return const AwaQuizScreen();
+        return AwaQuizScreen(onBack: () => _onNavTap(NavTab.menu));
       case NavTab.vote:
         return VoteScreen(isJuror: _isJuror, onBack: () => _onNavTap(NavTab.menu));
       case NavTab.translate:

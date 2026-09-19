@@ -18,6 +18,10 @@ dependencies:
   record: ^6.0.0
   audioplayers: ^6.1.0
   path_provider: ^2.1.4
+  http: ^1.2.0
+  webview_flutter: ^4.10.0
+  pdf: ^3.11.1
+  printing: ^5.13.2
 
 dev_dependencies:
   flutter_test:
@@ -42,6 +46,7 @@ flutter:
   assets:
     - .env
     - assets/branding/
+    - assets/illustrations/
     - assets/onboarding/
 
   fonts:

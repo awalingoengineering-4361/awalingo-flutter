@@ -911,23 +911,15 @@ class _VoteDetailScreenState extends State<VoteDetailScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.auto_awesome,
-                                          size: 14,
-                                          color: Color(0xFFEAAB0B)),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        widget.isWordOfTheDay
-                                            ? 'Word of the Day'
-                                            : 'Word to Vote On',
-                                        style: TextStyle(
-                                          fontFamily: 'Metropolis',
-                                          fontSize: 12,
-                                          color: c.mutedForeground,
-                                        ),
-                                      ),
-                                    ],
+                                  Text(
+                                    widget.isWordOfTheDay
+                                        ? 'Word of the Day'
+                                        : 'Word to Vote On',
+                                    style: TextStyle(
+                                      fontFamily: 'Metropolis',
+                                      fontSize: 12,
+                                      color: c.mutedForeground,
+                                    ),
                                   ),
                                   const SizedBox(height: 10),
                                   Text(
@@ -1164,7 +1156,7 @@ class _NeoRow extends StatelessWidget {
                 border: Border.all(
                   color: voted
                       ? const Color(0xFF2DA529)
-                      : const Color(0xFF420FBD),
+                      : const Color(0xFF3B82F6),
                   width: 1.5,
                 ),
               ),
@@ -1184,7 +1176,7 @@ class _NeoRow extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                       color: voted
                           ? const Color(0xFF2DA529)
-                          : const Color(0xFF420FBD),
+                          : const Color(0xFF3B82F6),
                     ),
                   ),
                 ],
