@@ -7,11 +7,13 @@ import 'package:http/http.dart' as http;
 import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../features/awaquiz/awaquiz_mapper.dart';
 import '../../features/awaquiz/awaquiz_progression.dart';
 import '../../services/awaquiz_certificate.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
+import '../../services/webview_support.dart';
 import '../../widgets/cowry_checkout_webview.dart';
 
 // ── Cowry top-up ─────────────────────────────────────────────────────────────
@@ -1348,15 +1350,24 @@ class _TopUpCowriesModalState extends State<_TopUpCowriesModal> {
       );
       if (!mounted) return;
       final webBaseUrl = dotenv.env['WEB_BASE_URL'] ?? '';
-      final result = await Navigator.of(context, rootNavigator: true)
-          .push<CowryCheckoutResult>(
-            MaterialPageRoute(
-              builder: (_) => CowryCheckoutScreen(
-                checkoutUrl: checkoutUrl,
-                webBaseUrl: webBaseUrl,
+      CowryCheckoutResult? result;
+      if (supportsInAppWebView) {
+        result = await Navigator.of(context, rootNavigator: true)
+            .push<CowryCheckoutResult>(
+              MaterialPageRoute(
+                builder: (_) => CowryCheckoutScreen(
+                  checkoutUrl: checkoutUrl,
+                  webBaseUrl: webBaseUrl,
+                ),
               ),
-            ),
-          );
+            );
+      } else {
+        // webview_flutter has no desktop/web implementation — fall back to
+        // the external browser there instead of crashing. We can't watch
+        // for the callback redirect this way, so the balance only updates
+        // on the next natural refresh.
+        await launchUrl(Uri.parse(checkoutUrl), mode: LaunchMode.externalApplication);
+      }
       if (!mounted) return;
       Navigator.of(context).pop(result ?? CowryCheckoutResult.cancelled);
     } catch (e) {

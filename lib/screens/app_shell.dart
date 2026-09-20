@@ -14,11 +14,20 @@ import 'main/menu_screen.dart';
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
 
+  // AppShell is pushed once at '/home' and then only popped back to (never
+  // rebuilt) — its cached role would otherwise never notice a mid-session
+  // promotion (e.g. passing the curator test) until the app restarts. Call
+  // this right after any action that can change the caller's role, mirroring
+  // web AuthContext's checkAuth()/invalidateQueries.
+  static void refreshRole() => _AppShellState._instance?._fetchRole();
+
   @override
   State<AppShell> createState() => _AppShellState();
 }
 
 class _AppShellState extends State<AppShell> {
+  static _AppShellState? _instance;
+
   NavTab _currentTab = NavTab.quiz;
   bool _isJuror = false;
   String? _role;
@@ -27,6 +36,18 @@ class _AppShellState extends State<AppShell> {
   // Nested navigator for the Menu tab so sub-pages (AwaQuiz level picker, etc.)
   // remain inside the shell and keep the top/bottom nav visible.
   final _menuNavKey = GlobalKey<NavigatorState>();
+
+  @override
+  void initState() {
+    super.initState();
+    _instance = this;
+  }
+
+  @override
+  void dispose() {
+    if (identical(_instance, this)) _instance = null;
+    super.dispose();
+  }
 
   @override
   void didChangeDependencies() {
@@ -56,6 +77,17 @@ class _AppShellState extends State<AppShell> {
   // first — otherwise a curator tapping Translate right at launch could
   // briefly see the guard meant for explorers.
   Future<void> _onNavTap(NavTab tab) async {
+    // A juror promotion is approved out-of-band (admin-side), so unlike the
+    // curator test there's no in-app moment to call refreshRole() from — the
+    // Menu tab's own card already re-fetches role fresh on every load and
+    // correctly shows "Jury Lounge", but tapping it just switches to this
+    // same NavTab.vote slot, which would otherwise render with AppShell's
+    // stale cached _isJuror (still routing to the plain Voting Lounge).
+    // Refreshing here keeps the two in sync at the moment it matters.
+    if (tab == NavTab.vote) {
+      await _fetchRole();
+      if (!mounted) return;
+    }
     if (tab == NavTab.translate) {
       if (!_roleLoaded || _role == null) await _roleFuture;
       if (!mounted) return;

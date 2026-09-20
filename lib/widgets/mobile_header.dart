@@ -310,16 +310,16 @@ class _AppMobileHeaderState extends State<AppMobileHeader> with WidgetsBindingOb
           height: 60,
           child: Row(
             children: [
-              // Wordmark — matches the Next.js web header exactly
-              GestureDetector(
-                onTap: () => Navigator.of(context).pushReplacementNamed('/home'),
-                child: Image.asset(
-                  isDark
-                      ? 'assets/branding/logo-wordmark-dark.png'
-                      : 'assets/branding/logo-wordmark-light.png',
-                  height: 36,
-                  fit: BoxFit.contain,
-                ),
+              // Wordmark — not tappable: this header is AppShell's persistent
+              // appBar, so a tap would pushReplacementNamed('/home') over
+              // the whole shell, discarding the Menu tab's nested navigator
+              // and resetting the selected bottom-nav tab.
+              Image.asset(
+                isDark
+                    ? 'assets/branding/logo-wordmark-dark.png'
+                    : 'assets/branding/logo-wordmark-light.png',
+                height: 36,
+                fit: BoxFit.contain,
               ),
 
               const Spacer(),
