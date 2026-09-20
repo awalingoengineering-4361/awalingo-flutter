@@ -590,6 +590,10 @@ class _VoteScreenState extends State<VoteScreen> {
                                                 term: t,
                                                 communityLangId: _communityId,
                                                 isJuror: widget.isJuror,
+                                                onReturn: () {
+                                                  setState(() { _loadDone = false; });
+                                                  _load();
+                                                },
                                               ))
                                           .toList(),
                                     ),
@@ -634,27 +638,36 @@ class _TermPill extends StatelessWidget {
   final _VotingTerm term;
   final int communityLangId;
   final bool isJuror;
+  // The list is fetched once per VoteScreen instance and never re-fetched on
+  // its own — without this, a term whose last neo just got rated (or voted
+  // on) stays in the list looking untouched until a manual pull/refresh,
+  // so tapping it again shows nothing left to validate.
+  final VoidCallback? onReturn;
 
   const _TermPill({
     required this.term,
     required this.communityLangId,
     this.isJuror = false,
+    this.onReturn,
   });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => isJuror
-            ? JuryDetailScreen(
-                termId: term.id,
-                communityLangId: communityLangId,
-              )
-            : VoteDetailScreen(
-                termId: term.id,
-                communityLangId: communityLangId,
-              ),
-      )),
+      onTap: () async {
+        await Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => isJuror
+              ? JuryDetailScreen(
+                  termId: term.id,
+                  communityLangId: communityLangId,
+                )
+              : VoteDetailScreen(
+                  termId: term.id,
+                  communityLangId: communityLangId,
+                ),
+        ));
+        onReturn?.call();
+      },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(

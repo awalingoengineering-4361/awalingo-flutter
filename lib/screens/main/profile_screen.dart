@@ -5,6 +5,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
 import '../../services/theme_notifier.dart';
+import '../../services/webview_support.dart';
+import '../../widgets/simple_webview_screen.dart';
 import 'privacy_settings_screen.dart';
 
 class _ProfileData {
@@ -138,10 +140,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // disclosure page (data controller, data processed, retention, etc.), not
   // a hub of sub-pages. There's no menu entry for Terms/FAQ/About/Team on
   // the authenticated web app at all — those only exist on the public
-  // marketing site — so this doesn't link out to them either.
+  // marketing site — so this doesn't link out to them either. Shown in-app
+  // (like the cowry checkout WebView) instead of handing off to the system
+  // browser — except on platforms webview_flutter doesn't support (desktop,
+  // web), where it falls back to the external browser instead of crashing.
   Future<void> _openLegalHub(BuildContext context) async {
     final webBaseUrl = dotenv.env['WEB_BASE_URL'] ?? '';
-    final uri = Uri.parse('$webBaseUrl/legal');
+    final url = '$webBaseUrl/legal';
+    if (supportsInAppWebView) {
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => SimpleWebViewScreen(url: url, title: 'Legal Hub'),
+      ));
+      return;
+    }
+    final uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else if (context.mounted) {

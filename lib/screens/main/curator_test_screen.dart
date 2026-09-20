@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
 import '../../services/theme_notifier.dart';
+import '../app_shell.dart';
 
 // Mirrors CURATOR_TEST_COOLDOWN_DAYS default (quiz.ts) — used only for the
 // result screen's copy, since the eligibility check itself already lives in
@@ -750,7 +751,13 @@ class _ResultView extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
               child: ElevatedButton(
-                onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst || r.settings.name == '/home'),
+                onPressed: () {
+                  // Mirrors result/page.tsx's handlePrimaryAction: refresh
+                  // the cached role so the promotion is reflected immediately
+                  // instead of needing an app restart to notice it.
+                  if (passed) AppShell.refreshRole();
+                  Navigator.of(context).popUntil((r) => r.isFirst || r.settings.name == '/home');
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: c.foreground,
                   foregroundColor: c.background,

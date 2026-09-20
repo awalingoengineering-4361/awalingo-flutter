@@ -368,35 +368,39 @@ class _MenuScreenState extends State<MenuScreen> {
               const SizedBox(height: 12),
             ],
 
+            // ── Explore Awadiko (all roles) ─────────────────────────────────
+            // Mirrors HomeClient.tsx: the "Explore Awadiko" CtaCard is never
+            // gated by role — only "Become a Curator" below it is Explorer-only.
+            _CtaCard(
+              title: 'Explore Awadiko',
+              subtitle: 'Browse words and their community translations',
+              word: 'The community dictionary',
+              ctaLabel: 'Awadiko',
+              buttonLabel: 'Explore',
+              buttonIcon: Icons.menu_book_outlined,
+              innerBg: isDark
+                  ? const Color(0xFF164E63).withValues(alpha: 0.35)
+                  : const Color(0xFFECFEFF),
+              innerBorder: isDark
+                  ? const Color(0xFF155E75)
+                  : const Color(0xFFA5F3FC),
+              pillBg: isDark
+                  ? const Color(0xFF155E75).withValues(alpha: 0.5)
+                  : const Color(0xFFCFFAFE),
+              pillText: isDark
+                  ? const Color(0xFF67E8F9)
+                  : const Color(0xFF0E7490),
+              wordColor: isDark
+                  ? const Color(0xFFFAFAFA)
+                  : const Color(0xFF111111),
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DictionaryScreen())),
+              c: c,
+              isDark: isDark,
+            ),
+            const SizedBox(height: 12),
+
             // ── Explorer-only cards ───────────────────────────────────────
             if (isExplorer) ...[
-              _CtaCard(
-                title: 'Explore Awadiko',
-                subtitle: 'Browse words and their community translations',
-                word: 'The community dictionary',
-                ctaLabel: 'Awadiko',
-                buttonLabel: 'Explore',
-                buttonIcon: Icons.menu_book_outlined,
-                innerBg: isDark
-                    ? const Color(0xFF164E63).withValues(alpha: 0.35)
-                    : const Color(0xFFECFEFF),
-                innerBorder: isDark
-                    ? const Color(0xFF155E75)
-                    : const Color(0xFFA5F3FC),
-                pillBg: isDark
-                    ? const Color(0xFF155E75).withValues(alpha: 0.5)
-                    : const Color(0xFFCFFAFE),
-                pillText: isDark
-                    ? const Color(0xFF67E8F9)
-                    : const Color(0xFF0E7490),
-                wordColor: isDark
-                    ? const Color(0xFFFAFAFA)
-                    : const Color(0xFF111111),
-                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DictionaryScreen())),
-                c: c,
-                isDark: isDark,
-              ),
-              const SizedBox(height: 12),
               _CtaCard(
                 title: 'Become a Curator',
                 subtitle: 'Take the test to translate words for your community',
