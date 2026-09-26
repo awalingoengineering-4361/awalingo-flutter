@@ -280,28 +280,43 @@ class _AwaQuizService {
     return questions;
   }
 
-  Future<int> startAttempt({
+  // Mirrors startCommunityQuizAttempt (community-quiz.ts:653): the entry
+  // fee + attempt creation happen server-side in one SECURITY DEFINER RPC,
+  // like unlock_awaquiz_review and promote_user_to_curator already do for
+  // similarly sensitive cowry/role mutations. A direct client-side insert
+  // into cowry_ledger hits Postgres error 42501 ("new row violates
+  // row-level security policy") — RLS only allows writes to that table
+  // through vetted server-side paths, not arbitrary client eventTypes — and
+  // a raw balance write bypasses cowry_ledger entirely, which any later
+  // ledger-sum recompute (e.g. unlockReview's charge) would silently erase.
+  Future<({int? attemptId, bool insufficientCowries, String? error})>
+  startAttempt({
     required String userId,
     required int languageId,
     required AwaQuizStage stage,
-    required int currentBalance,
   }) async {
-    await _db
-        .from('user_profile')
-        .update({'cowryBalance': currentBalance - stage.difficulty.cowryCost})
-        .eq('userId', userId);
-    final result = await _db
-        .from('community_quiz_attempts')
-        .insert(
-          buildAwaQuizAttemptInsert(
-            userId: userId,
-            languageId: languageId,
-            stage: stage,
-          ),
-        )
-        .select('id')
-        .single();
-    return result['id'] as int;
+    final payload = buildAwaQuizAttemptInsert(
+      userId: userId,
+      languageId: languageId,
+      stage: stage,
+    );
+    final result =
+        await _db.rpc(
+              'start_awaquiz_attempt',
+              params: {
+                'p_set_id': stage.setId,
+                'p_language_id': languageId,
+                'p_difficulty': payload['difficulty'],
+                'p_section': stage.section,
+                'p_entry_fee': payload['entryCostCowries'],
+              },
+            )
+            as Map<String, dynamic>;
+    return (
+      attemptId: result['attemptId'] as int?,
+      insufficientCowries: result['insufficientCowries'] as bool? ?? false,
+      error: result['error'] as String?,
+    );
   }
 
   Future<void> submitAttempt(int attemptId, int score, int total) async {
@@ -577,12 +592,16 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
         reportError('No questions available for this level yet.');
         return;
       }
-      final attemptId = await _service.startAttempt(
+      final started = await _service.startAttempt(
         userId: userId,
         languageId: _languageId,
         stage: level,
-        currentBalance: _cowryBalance,
       );
+      if (started.attemptId == null) {
+        if (started.insufficientCowries) _load();
+        reportError(started.error ?? 'Failed to start quiz. Please try again.');
+        return;
+      }
       if (!mounted) return;
       Navigator.of(context).pop();
       await Navigator.of(context, rootNavigator: true).push(
@@ -591,13 +610,14 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
             questions: questions,
             level: level,
             communityName: _communityName,
-            attemptId: attemptId,
+            attemptId: started.attemptId!,
             service: _service,
           ),
         ),
       );
       _load();
     } catch (e) {
+      debugPrint('startQuiz error: $e');
       reportError('Failed to start quiz. Please try again.');
     }
   }
