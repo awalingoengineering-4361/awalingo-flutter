@@ -412,11 +412,22 @@ class AwaQuizScreen extends StatefulWidget {
     this.onBack,
   });
 
+  // The quiz/result flow (_QuizScreen -> _ResultScreen) uses pushReplacement,
+  // so the _startQuiz caller's pending Navigator.push future — and the
+  // _load() refresh chained after it — resolves immediately at submission
+  // time, not when the user actually leaves _ResultScreen. Any cowry charge
+  // that happens later (e.g. paying to unlock missed-question review) never
+  // triggers a refresh on its own, leaving this screen's balance stale.
+  // Mirrors AppShell.refreshRole()'s same fix for the same class of bug.
+  static void refreshBalance() => _AwaQuizScreenState._instance?._load();
+
   @override
   State<AwaQuizScreen> createState() => _AwaQuizScreenState();
 }
 
 class _AwaQuizScreenState extends State<AwaQuizScreen> {
+  static _AwaQuizScreenState? _instance;
+
   final _service = _AwaQuizService();
   bool _loading = true;
   String? _error;
@@ -428,11 +439,18 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
   @override
   void initState() {
     super.initState();
+    _instance = this;
     if (widget.languageId != null) {
       _languageId = widget.languageId!;
       _communityName = widget.communityName ?? 'Community';
     }
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  @override
+  void dispose() {
+    if (identical(_instance, this)) _instance = null;
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -2444,6 +2462,12 @@ class _ResultScreenState extends State<_ResultScreen> {
                                       _reviewUnlocked = true;
                                       _showMissed = true;
                                     });
+                                  // Mirrors result/page.tsx's void checkAuth()
+                                  // after a successful unlock: the AwaQuiz
+                                  // overview's cached balance otherwise never
+                                  // learns about this charge (see
+                                  // AwaQuizScreen.refreshBalance's doc comment).
+                                  AwaQuizScreen.refreshBalance();
                                 } catch (e) {
                                   debugPrint('unlockReview failed: $e');
                                   setModalState(() {
