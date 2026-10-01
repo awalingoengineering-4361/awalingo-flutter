@@ -27,14 +27,22 @@ subprojects {
 // already sets this itself, so this mainly targets plugin modules) to the
 // same Java/Kotlin target instead of patching each plugin individually.
 subprojects {
-    afterEvaluate {
-        extensions.findByType(com.android.build.api.dsl.LibraryExtension::class.java)?.apply {
+    // afterEvaluate is unsafe here: the evaluationDependsOn(":app") above
+    // forces early evaluation of some subprojects, so by the time a plain
+    // `subprojects { afterEvaluate {...} }` runs, those are already
+    // evaluated ("Cannot run Project.afterEvaluate(Action) when the project
+    // is already evaluated"). withPlugin fires on plugin application
+    // instead, which is safe regardless of evaluation order.
+    pluginManager.withPlugin("com.android.library") {
+        extensions.configure(com.android.build.api.dsl.LibraryExtension::class.java) {
             compileOptions {
                 sourceCompatibility = JavaVersion.VERSION_17
                 targetCompatibility = JavaVersion.VERSION_17
             }
         }
-        extensions.findByType(com.android.build.api.dsl.ApplicationExtension::class.java)?.apply {
+    }
+    pluginManager.withPlugin("com.android.application") {
+        extensions.configure(com.android.build.api.dsl.ApplicationExtension::class.java) {
             compileOptions {
                 sourceCompatibility = JavaVersion.VERSION_17
                 targetCompatibility = JavaVersion.VERSION_17
