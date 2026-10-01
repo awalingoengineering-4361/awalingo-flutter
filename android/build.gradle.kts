@@ -33,16 +33,14 @@ subprojects {
     // evaluated ("Cannot run Project.afterEvaluate(Action) when the project
     // is already evaluated"). withPlugin fires on plugin application
     // instead, which is safe regardless of evaluation order.
+    // Only the "library" branch matters: every plugin module is an Android
+    // library module, never "application" — :app is the sole application
+    // module, and it already configures its own compileOptions directly in
+    // app/build.gradle.kts. Reapplying the same thing to :app from here
+    // conflicts once AGP finalizes that property ("sourceCompatibility has
+    // been finalized"), so :app is deliberately left alone.
     pluginManager.withPlugin("com.android.library") {
         extensions.configure(com.android.build.api.dsl.LibraryExtension::class.java) {
-            compileOptions {
-                sourceCompatibility = JavaVersion.VERSION_17
-                targetCompatibility = JavaVersion.VERSION_17
-            }
-        }
-    }
-    pluginManager.withPlugin("com.android.application") {
-        extensions.configure(com.android.build.api.dsl.ApplicationExtension::class.java) {
             compileOptions {
                 sourceCompatibility = JavaVersion.VERSION_17
                 targetCompatibility = JavaVersion.VERSION_17
