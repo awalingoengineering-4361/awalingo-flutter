@@ -5,6 +5,7 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   app_links
   audioplayers_windows
+  flutter_timezone
   passkeys_windows
   printing
   record_windows

@@ -1,12 +1,20 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../theme/app_theme.dart';
+import '../../features/awaquiz/awaquiz_progression.dart';
 import '../../services/auth_provider.dart';
+import '../../services/permissions.dart';
 import '../../services/theme_notifier.dart';
 import '../../services/webview_support.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/cowry_checkout_webview.dart';
+import '../../widgets/dev_role_switcher.dart';
 import '../../widgets/simple_webview_screen.dart';
+import '../../widgets/top_up_cowries_modal.dart';
+import 'daily_streak_screen.dart';
+import 'notifications_screen.dart';
 import 'privacy_settings_screen.dart';
 
 class _ProfileData {
@@ -14,25 +22,72 @@ class _ProfileData {
   final int cowryBalance;
   final bool allowInAppNotifications;
   final String? communityName;
+  final String role;
+  final int currentStreak;
+  final String? level; // raw difficulty, e.g. 'BEGINNER' — null if not started
+  final String? levelName; // human stage name, e.g. 'Sabi Player'
 
   const _ProfileData({
     this.name,
     this.cowryBalance = 0,
     this.allowInAppNotifications = true,
     this.communityName,
+    this.role = 'EXPLORER',
+    this.currentStreak = 0,
+    this.level,
+    this.levelName,
   });
 
-  _ProfileData copyWith({bool? allowInAppNotifications}) => _ProfileData(
-    name: name,
-    cowryBalance: cowryBalance,
-    allowInAppNotifications:
-        allowInAppNotifications ?? this.allowInAppNotifications,
-    communityName: communityName,
-  );
+  _ProfileData copyWith({bool? allowInAppNotifications, int? cowryBalance}) =>
+      _ProfileData(
+        name: name,
+        cowryBalance: cowryBalance ?? this.cowryBalance,
+        allowInAppNotifications:
+            allowInAppNotifications ?? this.allowInAppNotifications,
+        communityName: communityName,
+        role: role,
+        currentStreak: currentStreak,
+        level: level,
+        levelName: levelName,
+      );
 }
 
 class _ProfileService {
   final SupabaseClient _db = Supabase.instance.client;
+
+  // Mirrors getHighestQuizProgress (streaks/service.ts): the highest-ranked
+  // submitted AwaQuiz attempt (by difficulty, tie-broken by higher section),
+  // independent of the user's current target language.
+  Future<({String? level, String? levelName})> _highestQuizProgress(
+    String userId,
+  ) async {
+    final rows = await _db
+        .from('community_quiz_attempts')
+        .select('difficulty, section, submittedAt')
+        .eq('userId', userId);
+    final submitted = rows.where((r) => r['submittedAt'] != null).toList();
+    if (submitted.isEmpty) return (level: null, levelName: null);
+
+    int rank(String d) => switch (d) {
+      'ADVANCED' => 3,
+      'INTERMEDIATE' => 2,
+      'BEGINNER' => 1,
+      _ => 0,
+    };
+    submitted.sort((a, b) {
+      final byRank = rank(
+        b['difficulty'] as String,
+      ).compareTo(rank(a['difficulty'] as String));
+      if (byRank != 0) return byRank;
+      return (b['section'] as int).compareTo(a['section'] as int);
+    });
+    final top = submitted.first;
+    final level = top['difficulty'] as String;
+    return (
+      level: level,
+      levelName: stageNameForQuizProgress(level, top['section'] as int),
+    );
+  }
 
   Future<_ProfileData> loadProfile(String userId) async {
     final results = await Future.wait([
@@ -46,11 +101,27 @@ class _ProfileService {
           .select('language:languages!languageId(id, name)')
           .eq('userId', userId)
           .maybeSingle(),
+      _db
+          .from('user_roles')
+          .select('role:roles!roleId(name)')
+          .eq('userId', userId)
+          .limit(1)
+          .maybeSingle(),
+      _db
+          .from('user_streaks')
+          .select('currentDays')
+          .eq('userId', userId)
+          .maybeSingle(),
     ]);
 
     final profile = results[0];
     final utl = results[1];
+    final roleRow = results[2];
+    final streakRow = results[3];
+    final progress = await _highestQuizProgress(userId);
+
     final lang = utl?['language'] as Map<String, dynamic>?;
+    final roleMap = roleRow?['role'] as Map<String, dynamic>?;
 
     return _ProfileData(
       name: profile?['name'] as String?,
@@ -58,6 +129,10 @@ class _ProfileService {
       allowInAppNotifications:
           (profile?['allowInAppNotifications'] as bool?) ?? true,
       communityName: lang?['name'] as String?,
+      role: (roleMap?['name'] as String?) ?? 'EXPLORER',
+      currentStreak: (streakRow?['currentDays'] as int?) ?? 0,
+      level: progress.level,
+      levelName: progress.levelName,
     );
   }
 
@@ -78,8 +153,10 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   final _service = _ProfileService();
+  final _notificationService = NotificationService();
   bool _loading = true;
   _ProfileData? _data;
+  int _unreadCount = 0;
   bool _loadDone = false;
   bool _moreExpanded = false;
 
@@ -99,12 +176,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return;
     }
     try {
-      final data = await _service.loadProfile(userId);
-      if (mounted)
+      final results = await Future.wait([
+        _service.loadProfile(userId),
+        _notificationService.unreadCount(userId),
+      ]);
+      if (mounted) {
         setState(() {
-          _data = data;
+          _data = results[0] as _ProfileData;
+          _unreadCount = results[1] as int;
           _loading = false;
         });
+      }
     } catch (e) {
       debugPrint('Profile load error: $e');
       if (mounted) setState(() => _loading = false);
@@ -136,20 +218,61 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  // Opens the real /legal page (LegalHubPage in neolingo) — a single GDPR
-  // disclosure page (data controller, data processed, retention, etc.), not
-  // a hub of sub-pages. There's no menu entry for Terms/FAQ/About/Team on
-  // the authenticated web app at all — those only exist on the public
-  // marketing site — so this doesn't link out to them either. Shown in-app
-  // (like the cowry checkout WebView) instead of handing off to the system
-  // browser — except on platforms webview_flutter doesn't support (desktop,
-  // web), where it falls back to the external browser instead of crashing.
-  Future<void> _openLegalHub(BuildContext context) async {
+  // Mirrors getPaymentNotice (profile/page.tsx) verbatim.
+  Future<void> _showTopUpModal() async {
+    final result = await showDialog<CowryCheckoutResult>(
+      context: context,
+      builder: (_) => const TopUpCowriesModal(returnTo: 'profile'),
+    );
+    if (!mounted) return;
+    switch (result) {
+      case CowryCheckoutResult.success:
+        setState(() {
+          _loadDone = false;
+          _loading = true;
+        });
+        await _load();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Cowries topped up successfully.', style: TextStyle(fontFamily: 'Metropolis')),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        break;
+      case CowryCheckoutResult.failed:
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Payment could not be completed. Please try again.', style: TextStyle(fontFamily: 'Metropolis')),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        break;
+      case CowryCheckoutResult.missing:
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Payment returned without enough details to confirm it.', style: TextStyle(fontFamily: 'Metropolis')),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        break;
+      case CowryCheckoutResult.cancelled:
+      case null:
+        break;
+    }
+  }
+
+  // Shown in-app (like the cowry checkout WebView) instead of handing off to
+  // the system browser — except on platforms webview_flutter doesn't
+  // support (desktop, web), where it falls back to the external browser
+  // instead of crashing.
+  Future<void> _openWebPage(BuildContext context, String path, String title) async {
     final webBaseUrl = dotenv.env['WEB_BASE_URL'] ?? '';
-    final url = '$webBaseUrl/legal';
+    final url = '$webBaseUrl$path';
     if (supportsInAppWebView) {
       Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => SimpleWebViewScreen(url: url, title: 'Legal Hub'),
+        builder: (_) => SimpleWebViewScreen(url: url, title: title),
       ));
       return;
     }
@@ -164,6 +287,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       );
     }
+  }
+
+  String? _avatarUrl(User? user) {
+    final meta = user?.userMetadata;
+    final url = (meta?['avatar_url'] as String?) ?? (meta?['picture'] as String?);
+    return (url != null && url.isNotEmpty) ? url : null;
   }
 
   @override
@@ -223,9 +352,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ? _data!.name!
         : email.split('@').first;
     final initials = _initials(displayName);
+    final avatarUrl = _avatarUrl(user);
     final joinedAt = user?.createdAt != null
         ? DateTime.tryParse(user!.createdAt)
         : null;
+    final role = _data?.role ?? 'EXPLORER';
 
     return RefreshIndicator(
       onRefresh: () async {
@@ -275,16 +406,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       ],
                     ),
-                    child: Center(
-                      child: Text(
-                        initials,
-                        style: const TextStyle(
-                          fontFamily: 'Parkinsans',
-                          fontSize: 28,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
+                    child: ClipOval(
+                      child: avatarUrl != null
+                          ? Image.network(
+                              avatarUrl,
+                              width: 96,
+                              height: 96,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Center(
+                                child: Text(
+                                  initials,
+                                  style: const TextStyle(
+                                    fontFamily: 'Parkinsans',
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            )
+                          : Center(
+                              child: Text(
+                                initials,
+                                style: const TextStyle(
+                                  fontFamily: 'Parkinsans',
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
                     ),
                   ),
                   const SizedBox(height: 14),
@@ -324,70 +475,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: 12),
 
-            // ── Cowries stat card ─────────────────────────────────────────
-            Container(
+            // ── Overview stats grid ─────────────────────────────────────────
+            // Mirrors ProfileStatsGrid.tsx.
+            _StatsGrid(
+              cowries: _data?.cowryBalance ?? 0,
+              currentStreak: _data?.currentStreak ?? 0,
+              levelName: _data?.levelName,
+              role: role,
+              c: c,
+            ),
+            const SizedBox(height: 12),
+
+            // ── Buy Cowries ───────────────────────────────────────────────
+            SizedBox(
               width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: c.card,
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: c.border),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.06),
-                    blurRadius: 15,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFBBF24),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: isDark
-                            ? const Color(0xFFF59E0B).withValues(alpha: 0.3)
-                            : const Color(0xFFFDE68A),
-                        width: 4,
-                      ),
-                    ),
-                    child: const Icon(
-                      Icons.emoji_events,
-                      color: Color(0xFF1A1A1A),
-                      size: 22,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${_data?.cowryBalance ?? 0} ${(_data?.cowryBalance ?? 0) == 1 ? 'Cowry' : 'Cowries'} 🐚',
-                        style: TextStyle(
-                          fontFamily: 'Parkinsans',
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: c.foreground,
-                        ),
-                      ),
-                      Text(
-                        'Total Experience Points',
-                        style: TextStyle(
-                          fontFamily: 'Metropolis',
-                          fontSize: 12,
-                          color: c.mutedForeground,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+              height: 52,
+              child: ElevatedButton.icon(
+                onPressed: _showTopUpModal,
+                icon: const Icon(Icons.account_balance_wallet_outlined, size: 18, color: Color(0xFF1A1A1A)),
+                label: const Text(
+                  'Buy Cowries',
+                  style: TextStyle(fontFamily: 'Metropolis', fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF1A1A1A)),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFFBBF24),
+                  shape: const StadiumBorder(),
+                  elevation: 0,
+                ),
               ),
             ),
             const SizedBox(height: 12),
+
+            // TEMPORARY dev tool — see lib/widgets/dev_role_switcher.dart.
+            if (kDebugMode) const DevRoleSwitcher(),
 
             // ── Settings card ─────────────────────────────────────────────
             Container(
@@ -455,6 +575,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   // PREFERENCES
                   _GroupLabel('PREFERENCES', c: c),
                   _SettingsTile(
+                    icon: Icons.description_outlined,
+                    iconBg: c.secondary,
+                    iconColor: c.mutedForeground,
+                    label: 'View all notifications',
+                    trailing: _unreadCount > 0
+                        ? Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: c.secondary,
+                              borderRadius: BorderRadius.circular(100),
+                            ),
+                            child: Text(
+                              '$_unreadCount',
+                              style: TextStyle(fontFamily: 'Metropolis', fontSize: 11, fontWeight: FontWeight.w600, color: c.mutedForeground),
+                            ),
+                          )
+                        : null,
+                    onTap: () => Navigator.of(context)
+                        .push(MaterialPageRoute(builder: (_) => const NotificationsScreen()))
+                        .then((_) => _load()),
+                    c: c,
+                  ),
+                  _SettingsTile(
                     icon: Icons.notifications_outlined,
                     iconBg: c.secondary,
                     iconColor: c.mutedForeground,
@@ -464,6 +607,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       value: _data?.allowInAppNotifications ?? true,
                       onChanged: _toggleNotifications,
                       activeThumbColor: const Color(0xFF9C62D9),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    c: c,
+                  ),
+                  // Mirrors PushNotificationsToggle.tsx: that's browser Web
+                  // Push (Service Worker + VAPID), which has no native mobile
+                  // equivalent built yet — shown disabled with an inline
+                  // reason (matching the web component's own
+                  // disables-with-reason pattern when unsupported) rather
+                  // than silently hidden.
+                  _SettingsTile(
+                    icon: Icons.notifications_active_outlined,
+                    iconBg: c.secondary,
+                    iconColor: c.mutedForeground,
+                    label: 'Allow Push Notifications',
+                    subtitle: 'Not available on this device yet',
+                    trailing: Switch(
+                      value: false,
+                      onChanged: null,
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                     c: c,
@@ -532,11 +694,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       c: c,
                     ),
                     _SettingsTile(
-                      icon: Icons.gavel_outlined,
+                      icon: Icons.description_outlined,
                       iconBg: c.secondary,
                       iconColor: c.mutedForeground,
-                      label: 'Legal Hub',
-                      onTap: () => _openLegalHub(context),
+                      label: 'Privacy Policy',
+                      onTap: () => _openWebPage(context, '/privacy-policy', 'Privacy Policy'),
+                      c: c,
+                    ),
+                  ],
+
+                  // Administration — visible to admins only.
+                  if (hasPermission(role, Permission.viewAdmin)) ...[
+                    Divider(height: 1, color: c.border),
+                    _GroupLabel('ADMINISTRATION', c: c),
+                    _SettingsTile(
+                      icon: Icons.shield_outlined,
+                      iconBg: isDark ? const Color(0xFF881337).withValues(alpha: 0.3) : const Color(0xFFFFF1F2),
+                      iconColor: isDark ? const Color(0xFFFB7185) : const Color(0xFFE11D48),
+                      label: 'Admin Dashboard',
+                      onTap: () => _openWebPage(context, '/admin', 'Admin Dashboard'),
+                      c: c,
+                    ),
+                  ],
+
+                  // Management — visible to managers only.
+                  if (hasPermission(role, Permission.viewManager)) ...[
+                    Divider(height: 1, color: c.border),
+                    _GroupLabel('MANAGEMENT', c: c),
+                    _SettingsTile(
+                      icon: Icons.shield_outlined,
+                      iconBg: isDark ? const Color(0xFF064E3B).withValues(alpha: 0.3) : const Color(0xFFECFDF5),
+                      iconColor: isDark ? const Color(0xFF34D399) : const Color(0xFF059669),
+                      label: 'Manager Board',
+                      onTap: () => _openWebPage(context, '/manager', 'Manager Board'),
                       c: c,
                     ),
                   ],
@@ -630,6 +820,149 @@ class _ProfileScreenState extends State<ProfileScreen> {
       'Dec',
     ];
     return '${months[dt.month - 1]} ${dt.year}';
+  }
+}
+
+// ── Overview stats grid ──────────────────────────────────────────────────────
+// Mirrors ProfileStatsGrid.tsx: a 2x2 grid of Streak / Cowries / Level /
+// User type, each a small icon + stacked label/value.
+
+String _formatEnumValue(String value) =>
+    value.isEmpty ? value : value[0].toUpperCase() + value.substring(1).toLowerCase();
+
+class _StatsGrid extends StatelessWidget {
+  final int cowries;
+  final int currentStreak;
+  final String? levelName;
+  final String role;
+  final AppColorScheme c;
+
+  const _StatsGrid({
+    required this.cowries,
+    required this.currentStreak,
+    required this.levelName,
+    required this.role,
+    required this.c,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: c.card,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: c.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Overview',
+            style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, color: c.mutedForeground),
+          ),
+          const SizedBox(height: 8),
+          Divider(height: 1, color: c.border),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _StatItem(
+                  icon: Icons.local_fire_department_outlined,
+                  label: 'Streak',
+                  value: '$currentStreak ${currentStreak == 1 ? 'day' : 'days'} streak',
+                  c: c,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const DailyStreakScreen()),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _StatItem(
+                  icon: Icons.paid_outlined,
+                  label: 'Cowries',
+                  value: '$cowries ${cowries == 1 ? 'Cowry' : 'Cowries'}',
+                  c: c,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _StatItem(
+                  icon: Icons.school_outlined,
+                  label: 'Level',
+                  value: levelName ?? 'Not started',
+                  c: c,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _StatItem(
+                  icon: Icons.person_outline,
+                  label: 'User type',
+                  value: _formatEnumValue(role),
+                  c: c,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final AppColorScheme c;
+  final VoidCallback? onTap;
+
+  const _StatItem({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.c,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final row = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: c.mutedForeground),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(fontFamily: 'Metropolis', fontSize: 12, color: c.mutedForeground),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, fontWeight: FontWeight.w700, color: c.foreground),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (onTap == null) return row;
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: row,
+    );
   }
 }
 

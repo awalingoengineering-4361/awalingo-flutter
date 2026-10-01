@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
+import '../../services/permissions.dart';
 import 'curator_test_screen.dart';
 
 const bool _kEnableCuratorTestCooldown = true;
@@ -26,13 +27,7 @@ class _BecomeCuratorService {
 
   Future<_CuratorEligibility> check(String userId) async {
     // Check current role
-    final roleRow = await _db
-        .from('user_roles')
-        .select('role:roles!roleId(name)')
-        .eq('userId', userId)
-        .maybeSingle();
-    final roleName =
-        (roleRow?['role'] as Map<String, dynamic>?)?['name'] as String?;
+    final roleName = await fetchUserRole(_db, userId);
 
     if (roleName == 'CURATOR' ||
         roleName == 'JUROR' ||

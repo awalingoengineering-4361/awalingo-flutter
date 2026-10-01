@@ -21,6 +21,12 @@ class AppShell extends StatefulWidget {
   // web AuthContext's checkAuth()/invalidateQueries.
   static void refreshRole() => _AppShellState._instance?._fetchRole();
 
+  // For screens pushed on top of the shell from outside its own nav tabs
+  // (e.g. AwaQuiz reached via Daily Streak's "Take AwaQuiz" button, which has
+  // no `onBack` tab to fall back to) — selects the Menu tab on the
+  // already-live AppShell instance before the caller pops back down to it.
+  static void goToMenu() => _AppShellState._instance?._onNavTap(NavTab.menu);
+
   @override
   State<AppShell> createState() => _AppShellState();
 }
