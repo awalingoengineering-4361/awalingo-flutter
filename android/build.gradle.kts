@@ -28,7 +28,13 @@ subprojects {
 // same Java/Kotlin target instead of patching each plugin individually.
 subprojects {
     afterEvaluate {
-        extensions.findByType(com.android.build.gradle.BaseExtension::class.java)?.apply {
+        extensions.findByType(com.android.build.api.dsl.LibraryExtension::class.java)?.apply {
+            compileOptions {
+                sourceCompatibility = JavaVersion.VERSION_17
+                targetCompatibility = JavaVersion.VERSION_17
+            }
+        }
+        extensions.findByType(com.android.build.api.dsl.ApplicationExtension::class.java)?.apply {
             compileOptions {
                 sourceCompatibility = JavaVersion.VERSION_17
                 targetCompatibility = JavaVersion.VERSION_17
@@ -36,8 +42,8 @@ subprojects {
         }
     }
     tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile::class.java).configureEach {
-        kotlinOptions {
-            jvmTarget = "17"
+        compilerOptions {
+            jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
         }
     }
 }
