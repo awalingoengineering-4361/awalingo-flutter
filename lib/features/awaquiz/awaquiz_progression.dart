@@ -113,6 +113,24 @@ const _stageDefinitions = [
   ),
 ];
 
+// Mirrors getStageName (lib/streaks/service.ts): resolves the human stage
+// label for a raw (difficulty, section) pair read straight from
+// community_quiz_attempts — used by the Profile "Level" stat, which reads
+// the user's single highest-ranked attempt directly rather than going
+// through the unlocked-stage list buildAwaQuizStages produces. Falls back to
+// DEFAULT_STAGE_BY_DIFFICULTY when section isn't one of the canonical 1-6
+// stages (e.g. legacy/ad-hoc quiz data).
+String stageNameForQuizProgress(String difficulty, int section) {
+  for (final def in _stageDefinitions) {
+    if (def.section == section) return def.name;
+  }
+  return switch (difficulty.toUpperCase()) {
+    'INTERMEDIATE' => 'Shugaba',
+    'ADVANCED' => 'Idan',
+    _ => 'Sabi Player',
+  };
+}
+
 List<AwaQuizStage> buildAwaQuizStages({
   required List<AwaQuizQuestionBank> banks,
   required List<AwaQuizAttemptSnapshot> attempts,

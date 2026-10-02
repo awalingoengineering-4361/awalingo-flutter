@@ -1,4 +1,31 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+const _kDevRoleOverrideKey = 'dev_role_override';
+
+// TEMPORARY dev-only role override (see lib/widgets/dev_role_switcher.dart):
+// user_roles has RLS that blocks a user from writing their own row (by
+// design — role changes are only meant to happen through vetted
+// server-side flows like promote_user_to_curator), so testing role-gated
+// UI without a database change means overriding what fetchUserRole()
+// *returns* instead of what's actually stored. Only takes effect in debug
+// builds; remove alongside dev_role_switcher.dart once role-testing is done.
+Future<void> setDevRoleOverride(String? role) async {
+  if (!kDebugMode) return;
+  final prefs = await SharedPreferences.getInstance();
+  if (role == null) {
+    await prefs.remove(_kDevRoleOverrideKey);
+  } else {
+    await prefs.setString(_kDevRoleOverrideKey, role);
+  }
+}
+
+Future<String?> devRoleOverride() async {
+  if (!kDebugMode) return null;
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getString(_kDevRoleOverrideKey);
+}
 
 // Mirrors neolingo/src/lib/auth/permissions.ts exactly — the Next.js app's
 // ROLE_PERMISSIONS map is the single source of truth; this is a client-side
@@ -60,6 +87,9 @@ bool hasPermission(String? role, String permission) =>
 /// (server-auth.ts:39-42): defaults to 'EXPLORER' when the user has no role
 /// row, since that's the implicit default role, not "no permissions at all".
 Future<String> fetchUserRole(SupabaseClient db, String userId) async {
+  final override = await devRoleOverride();
+  if (override != null) return override;
+
   final row = await db
       .from('user_roles')
       .select('role:roles!roleId(name)')

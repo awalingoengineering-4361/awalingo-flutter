@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../features/streaks/streak_repository.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
 import '../../widgets/neo_audio_play_button.dart';
@@ -217,6 +218,7 @@ class _VoteService {
 
 class _VoteDetailService {
   final SupabaseClient _db = Supabase.instance.client;
+  late final StreakRepository _streaks = StreakRepository(_db);
 
   Future<List<_NeoOption>> loadNeos(int termId, int communityLangId) async {
     final rows = await _db
@@ -319,6 +321,12 @@ class _VoteDetailService {
           .from('user_profile')
           .update({'cowryBalance': current + 1}).eq('userId', userId);
     }
+    final timeZone = await currentStreakTimeZone();
+    await _streaks.recordActivity(
+      activityType: 'VOTE_NEO',
+      sourceId: 'term:$termId',
+      timeZone: timeZone,
+    );
     return true;
   }
 
@@ -376,6 +384,16 @@ class _VoteDetailService {
               ? rejectionReason
               : null,
     });
+    // record_streak_activity dedupes on (userId, activityType, sourceId),
+    // so calling this on every re-rating of the same Neo is harmless — only
+    // the first one ever counts toward the streak, same as JURY_RATE_NEO on
+    // web (curateNeo.ts's rateNeo only records on wasFirstRating).
+    final timeZone = await currentStreakTimeZone();
+    await _streaks.recordActivity(
+      activityType: 'JURY_RATE_NEO',
+      sourceId: 'neo:$neoId',
+      timeZone: timeZone,
+    );
   }
 }
 

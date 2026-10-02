@@ -28,16 +28,7 @@ class _WordRequest {
 class _CuratorRequestsService {
   final SupabaseClient _db = Supabase.instance.client;
 
-  Future<String?> fetchRole(String userId) async {
-    final row = await _db
-        .from('user_roles')
-        .select('role:roles!roleId(name)')
-        .eq('userId', userId)
-        .limit(1)
-        .maybeSingle();
-    final role = row?['role'] as Map<String, dynamic>?;
-    return role?['name'] as String?;
-  }
+  Future<String> fetchRole(String userId) => fetchUserRole(_db, userId);
 
   Future<List<_WordRequest>> loadPending(int? communityLangId) async {
     var query = _db

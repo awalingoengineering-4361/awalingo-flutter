@@ -1,66 +1,17 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:http/http.dart' as http;
 import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../features/awaquiz/awaquiz_mapper.dart';
 import '../../features/awaquiz/awaquiz_progression.dart';
+import '../../features/streaks/streak_repository.dart';
 import '../../services/awaquiz_certificate.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
-import '../../services/webview_support.dart';
 import '../../widgets/cowry_checkout_webview.dart';
-
-// ── Cowry top-up ─────────────────────────────────────────────────────────────
-
-// Mirrors COWRY_TOP_UP_PACKAGES (neolingo/src/lib/cowry-payments.ts) — a
-// static, server-defined price list, so it's ported as one here too rather
-// than fetched.
-class CowryTopUpPackage {
-  final String id;
-  final String name;
-  final int cowries;
-  final Map<String, num> amounts; // currency code -> amount
-  const CowryTopUpPackage({
-    required this.id,
-    required this.name,
-    required this.cowries,
-    required this.amounts,
-  });
-}
-
-const kCowryTopUpPackages = [
-  CowryTopUpPackage(
-    id: 'copper-50',
-    name: 'Copper',
-    cowries: 50,
-    amounts: {'NGN': 750, 'USD': 0.5},
-  ),
-  CowryTopUpPackage(
-    id: 'silver-100',
-    name: 'Silver',
-    cowries: 100,
-    amounts: {'NGN': 1500, 'USD': 1},
-  ),
-  CowryTopUpPackage(
-    id: 'gold-500',
-    name: 'Gold',
-    cowries: 500,
-    amounts: {'NGN': 5000, 'USD': 3.5},
-  ),
-  CowryTopUpPackage(
-    id: 'diamond-1000',
-    name: 'Diamond',
-    cowries: 1000,
-    amounts: {'NGN': 7000, 'USD': 5},
-  ),
-];
-const kCowryPaymentCurrencies = ['NGN', 'USD'];
+import '../../widgets/top_up_cowries_modal.dart';
 
 // ── Stage visual constants ──────────────────────────────────────────────────────
 
@@ -383,35 +334,9 @@ class _AwaQuizService {
     );
   }
 
-  // Mirrors handleTopUp (awaquiz/page.tsx): POSTs to the web app's own
-  // /api/payments/flutterwave/initiate route, which talks to Flutterwave
-  // server-side and returns a hosted checkout URL. Flutter has no server of
-  // its own to hold the Flutterwave secret keys, so this calls the same
-  // trusted endpoint the web client calls, authenticated with the user's
-  // Supabase access token instead of the browser session cookie the web
-  // client relies on.
-  Future<String> initiateTopUp({
-    required String packageId,
-    required String currency,
-  }) async {
-    final token = _db.auth.currentSession?.accessToken;
-    if (token == null) throw Exception('Not authenticated');
-    final webBaseUrl = dotenv.env['WEB_BASE_URL'] ?? '';
-    final response = await http.post(
-      Uri.parse('$webBaseUrl/api/payments/flutterwave/initiate'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-      body: jsonEncode({'packageId': packageId, 'currency': currency}),
-    );
-    final data = jsonDecode(response.body) as Map<String, dynamic>;
-    final checkoutUrl = data['checkoutUrl'] as String?;
-    if (response.statusCode != 200 || checkoutUrl == null) {
-      throw Exception(data['error'] as String? ?? 'Unable to start payment.');
-    }
-    return checkoutUrl;
-  }
+  // Payment options/initiation now live in the shared PaymentService/
+  // TopUpCowriesModal (used by both this AwaQuiz entry point and Profile's
+  // "Buy Cowries"), so this service has no payment methods of its own.
 }
 
 // ── Level Picker Screen ─────────────────────────────────────────────────────────
@@ -550,7 +475,7 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
   Future<void> _showTopUpModal() async {
     final result = await showDialog<CowryCheckoutResult>(
       context: context,
-      builder: (_) => _TopUpCowriesModal(service: _service),
+      builder: (_) => const TopUpCowriesModal(returnTo: 'awaquiz'),
     );
     if (!mounted) return;
     if (result == CowryCheckoutResult.success) {
@@ -1359,248 +1284,6 @@ class _NotEnoughCowriesModal extends StatelessWidget {
   }
 }
 
-// Mirrors TopUpCowriesModal (awaquiz/page.tsx): currency toggle + the static
-// package list, POSTing to the same Flutterwave-initiate endpoint the web
-// client calls and opening the returned checkout URL in-app (CowryCheckoutScreen)
-// instead of a full page redirect.
-class _TopUpCowriesModal extends StatefulWidget {
-  final _AwaQuizService service;
-  const _TopUpCowriesModal({required this.service});
-
-  @override
-  State<_TopUpCowriesModal> createState() => _TopUpCowriesModalState();
-}
-
-class _TopUpCowriesModalState extends State<_TopUpCowriesModal> {
-  String _currency = 'NGN';
-  String? _startingPackageId;
-  String? _error;
-
-  Future<void> _pay(CowryTopUpPackage pkg) async {
-    setState(() {
-      _startingPackageId = pkg.id;
-      _error = null;
-    });
-    try {
-      final checkoutUrl = await widget.service.initiateTopUp(
-        packageId: pkg.id,
-        currency: _currency,
-      );
-      if (!mounted) return;
-      final webBaseUrl = dotenv.env['WEB_BASE_URL'] ?? '';
-      CowryCheckoutResult? result;
-      if (supportsInAppWebView) {
-        result = await Navigator.of(context, rootNavigator: true)
-            .push<CowryCheckoutResult>(
-              MaterialPageRoute(
-                builder: (_) => CowryCheckoutScreen(
-                  checkoutUrl: checkoutUrl,
-                  webBaseUrl: webBaseUrl,
-                ),
-              ),
-            );
-      } else {
-        // webview_flutter has no desktop/web implementation — fall back to
-        // the external browser there instead of crashing. We can't watch
-        // for the callback redirect this way, so the balance only updates
-        // on the next natural refresh.
-        await launchUrl(Uri.parse(checkoutUrl), mode: LaunchMode.externalApplication);
-      }
-      if (!mounted) return;
-      Navigator.of(context).pop(result ?? CowryCheckoutResult.cancelled);
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _startingPackageId = null;
-          _error = 'Unable to start payment. Please try again.';
-        });
-      }
-    }
-  }
-
-  String _formatAmount(num amount, String currency) {
-    final symbol = currency == 'USD' ? '\$' : '₦';
-    final isWhole = amount == amount.roundToDouble();
-    return '$symbol${isWhole ? amount.toInt() : amount.toStringAsFixed(2)}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = AppColorScheme.of(context);
-    return Dialog(
-      backgroundColor: c.card,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Top Up your cowries',
-                        style: TextStyle(
-                          fontFamily: 'Parkinsans',
-                          fontSize: 18,
-                          fontWeight: FontWeight.w600,
-                          color: c.foreground,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Pay in Naira or Dollars.',
-                        style: TextStyle(
-                          fontFamily: 'Metropolis',
-                          fontSize: 13,
-                          color: c.mutedForeground,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.close, size: 16, color: c.mutedForeground),
-                  onPressed: _startingPackageId != null
-                      ? null
-                      : () => Navigator.of(context).pop(),
-                  style: IconButton.styleFrom(
-                    backgroundColor: c.secondary,
-                    minimumSize: const Size(28, 28),
-                    padding: EdgeInsets.zero,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: c.secondary,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: kCowryPaymentCurrencies.map((cur) {
-                  final selected = cur == _currency;
-                  return Expanded(
-                    child: GestureDetector(
-                      onTap: () => setState(() => _currency = cur),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        decoration: BoxDecoration(
-                          color: selected ? c.card : Colors.transparent,
-                          borderRadius: BorderRadius.circular(10),
-                          boxShadow: selected
-                              ? [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.06),
-                                    blurRadius: 6,
-                                  ),
-                                ]
-                              : null,
-                        ),
-                        child: Text(
-                          cur,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontFamily: 'Metropolis',
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                            color: selected ? c.foreground : c.mutedForeground,
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            if (_error != null) ...[
-              Text(
-                _error!,
-                style: const TextStyle(
-                  fontFamily: 'Metropolis',
-                  fontSize: 12,
-                  color: Color(0xFFDC2626),
-                ),
-              ),
-              const SizedBox(height: 8),
-            ],
-            for (final pkg in kCowryTopUpPackages)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: GestureDetector(
-                  onTap: _startingPackageId != null ? null : () => _pay(pkg),
-                  child: Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: c.secondary,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: c.border),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                pkg.name,
-                                style: TextStyle(
-                                  fontFamily: 'Metropolis',
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                  color: c.foreground,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                '🐚 ${pkg.cowries} cowries',
-                                style: TextStyle(
-                                  fontFamily: 'Metropolis',
-                                  fontSize: 12,
-                                  color: c.mutedForeground,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (_startingPackageId == pkg.id)
-                          SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: c.primary,
-                            ),
-                          )
-                        else
-                          Text(
-                            _formatAmount(pkg.amounts[_currency]!, _currency),
-                            style: TextStyle(
-                              fontFamily: 'Metropolis',
-                              fontWeight: FontWeight.w700,
-                              fontSize: 15,
-                              color: c.foreground,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _GridTile extends StatelessWidget {
   final String label;
   final String value;
@@ -1745,6 +1428,16 @@ class _QuizScreenState extends State<_QuizScreen> with WidgetsBindingObserver {
         widget.questions.length,
       );
     } catch (_) {}
+    if (!mounted) return;
+    final userId = AuthProvider.of(context).user?.id;
+    if (userId != null) {
+      final timeZone = await currentStreakTimeZone();
+      await StreakRepository(Supabase.instance.client).recordActivity(
+        activityType: 'AWAQUIZ_SUBMIT',
+        sourceId: 'attempt:${widget.attemptId}',
+        timeZone: timeZone,
+      );
+    }
     if (!mounted) return;
     final missed = _answers
         .asMap()

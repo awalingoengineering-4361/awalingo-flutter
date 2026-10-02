@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../features/streaks/streak_repository.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
 import '../../widgets/word_request_tabs.dart';
@@ -39,6 +40,7 @@ class _RequestSubmitException implements Exception {
 
 class _RequestService {
   final SupabaseClient _db = Supabase.instance.client;
+  late final StreakRepository _streaks = StreakRepository(_db);
 
   Future<_Bootstrap> bootstrap(String userId) async {
     final engRow = await _db
@@ -115,15 +117,19 @@ class _RequestService {
       );
     }
 
-    await _db.from('translation_requests').insert({
-      'word': trimmedWord,
-      'meaning': trimmedMeaning,
-      'sourceLanguageId': sourceLanguageId,
-      'targetLanguageId': targetLanguageId,
-      'partOfSpeechId': partOfSpeechId,
-      'userId': userId,
-      'status': 'PENDING',
-    });
+    final request = await _db
+        .from('translation_requests')
+        .insert({
+          'word': trimmedWord,
+          'meaning': trimmedMeaning,
+          'sourceLanguageId': sourceLanguageId,
+          'targetLanguageId': targetLanguageId,
+          'partOfSpeechId': partOfSpeechId,
+          'userId': userId,
+          'status': 'PENDING',
+        })
+        .select('id')
+        .single();
 
     final profile = await _db
         .from('user_profile')
@@ -136,6 +142,12 @@ class _RequestService {
           .from('user_profile')
           .update({'cowryBalance': current + 3}).eq('userId', userId);
     }
+    final timeZone = await currentStreakTimeZone();
+    await _streaks.recordActivity(
+      activityType: 'REQUEST_NEO',
+      sourceId: 'request:${request['id']}',
+      timeZone: timeZone,
+    );
   }
 }
 

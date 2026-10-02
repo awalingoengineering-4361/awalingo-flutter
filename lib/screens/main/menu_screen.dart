@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
 import '../../services/permissions.dart';
+import '../../features/menu/daily_word.dart' as wotd;
 import '../../widgets/bottom_nav.dart';
 import 'become_curator_screen.dart';
 import 'become_juror_screen.dart';
@@ -34,67 +35,32 @@ class _HomeService {
     int communityId,
     String role,
   })> load(String userId) async {
-    final results = await Future.wait([
-      _db
-          .from('user_target_languages')
-          .select('language:languages!languageId(id, name)')
-          .eq('userId', userId)
-          .maybeSingle(),
-      _db
-          .from('user_roles')
-          .select('role:roles!roleId(name)')
-          .eq('userId', userId)
-          .limit(1)
-          .maybeSingle(),
-    ]);
-
-    final utl = results[0];
-    final userRoleRow = results[1];
+    final utlFuture = _db
+        .from('user_target_languages')
+        .select('language:languages!languageId(id, name)')
+        .eq('userId', userId)
+        .maybeSingle();
+    final roleFuture = fetchUserRole(_db, userId);
+    final utl = await utlFuture;
+    final role = await roleFuture;
 
     final lang = utl?['language'] as Map<String, dynamic>?;
     final communityId = (lang?['id'] as int?) ?? 1;
     final communityName = (lang?['name'] as String?) ?? 'Community';
 
-    final roleMap = userRoleRow?['role'] as Map<String, dynamic>?;
-    final role = (roleMap?['name'] as String?) ?? 'EXPLORER';
-
-    // Fetch vote word (neo with enough ratings)
-    final neoRows = await _db
-        .from('neos')
-        .select('termId, ratingCount, rejectCount')
-        .eq('languageId', communityId)
-        .gt('ratingCount', 0)
-        .limit(20);
-
-    final validTermIds = neoRows
-        .where((n) =>
-            (n['rejectCount'] as int? ?? 0) < (n['ratingCount'] as int? ?? 0))
-        .map((n) => n['termId'] as int)
-        .toSet()
-        .toList();
-
-    String? voteWord;
-    if (validTermIds.isNotEmpty) {
-      final term = await _db
-          .from('terms')
-          .select('text')
-          .eq('id', validTermIds.first)
-          .maybeSingle();
-      voteWord = term?['text'] as String?;
-    }
-
-    // Fetch a suggest word (English term for curators/jurors to translate)
-    String? suggestWord;
-    if (role == 'CURATOR' || role == 'JUROR') {
-      final suggestRows = await _db
-          .from('terms')
-          .select('text')
-          .eq('languageId', 1)
-          .limit(1);
-      if (suggestRows.isNotEmpty) {
-        suggestWord = suggestRows.first['text'] as String?;
-      }
-    }
+    // Based on getDailyWord (neolingo/src/actions/wotd.ts): a deterministic,
+    // date-rotating pick — personalized for this app so the vote word
+    // excludes terms the current user has already voted on (see
+    // daily_word.dart). Always computed regardless of role, same as web —
+    // only whether the suggest card is shown is role-gated below.
+    final daily = await wotd.getDailyWord(
+      _db,
+      userId: userId,
+      communityLanguageId: communityId,
+    );
+    final voteWord = daily.voteWord.text;
+    final suggestWord =
+        (role == 'CURATOR' || role == 'JUROR') ? daily.suggestWord.text : null;
 
     return (
       voteWord: voteWord,
