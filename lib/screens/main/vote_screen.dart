@@ -85,7 +85,10 @@ class _VoteService {
   // 20 make the cut, not final display order); terms the user has already
   // voted on (any neo) are excluded entirely; final order is by each term's
   // oldest qualifying neo's createdAt ascending, not alphabetical.
-  Future<List<_VotingTerm>> loadTerms(int neoLangId) async {
+  Future<List<_VotingTerm>> loadTerms({
+    required int termLangId,
+    required int neoTargetLangId,
+  }) async {
     final userId = _db.auth.currentUser?.id;
     if (userId == null) return [];
 
@@ -93,7 +96,7 @@ class _VoteService {
       _db
           .from('neos')
           .select('id, termId, ratingCount, rejectCount, createdAt')
-          .eq('languageId', neoLangId)
+          .eq('languageId', neoTargetLangId)
           .gt('ratingCount', 0),
       _db.from('neo_rating').select('neoId').eq('userId', userId),
       _db
@@ -133,6 +136,7 @@ class _VoteService {
     final termRows = await _db
         .from('terms')
         .select('id, text, meaning, partOfSpeech:part_of_speech!partOfSpeechId(name)')
+        .eq('languageId', termLangId)
         .inFilter('id', finalIds);
 
     final earliestByTerm = <int, DateTime>{};
@@ -170,13 +174,14 @@ class _VoteService {
 
   Future<List<_VotingTerm>> loadTermsForJury({
     required String userId,
-    required int neoLangId,
+    required int termLangId,
+    required int neoTargetLangId,
   }) async {
     // Fetch neos not created by user, with rejectCount < 3
     final neoRows = await _db
         .from('neos')
         .select('id, termId')
-        .eq('languageId', neoLangId)
+        .eq('languageId', neoTargetLangId)
         .neq('userId', userId)
         .lt('rejectCount', 3);
 
@@ -202,6 +207,7 @@ class _VoteService {
     final termRows = await _db
         .from('terms')
         .select('id, text, meaning, partOfSpeech:part_of_speech!partOfSpeechId(name)')
+        .eq('languageId', termLangId)
         .inFilter('id', validTermIds);
 
     return termRows.map((r) {
@@ -430,12 +436,26 @@ class _VoteScreenState extends State<VoteScreen> {
     }
   }
 
+  // Mirrors getTerms(languageId, userId, 'vote', targetLanguageId)
+  // (curateNeo.ts) exactly: `languageId` filters the *term's own* language
+  // (what this tab is showing terms in), `targetLanguageId` filters the
+  // *candidate neo's* language (what translations are being voted on for
+  // those terms) — the opposite language from the tab. Conflating the two
+  // (using the same id for both) is what previously made the English tab
+  // show community-language terms and vice versa.
+  int get _currentNeoTargetLangId => _showEnglish ? _communityId : _engId;
+
   Future<List<_VotingTerm>> _fetchTerms(bool showEnglish) {
-    final neoLangId = showEnglish ? _engId : _communityId;
+    final termLangId = showEnglish ? _engId : _communityId;
+    final neoTargetLangId = showEnglish ? _communityId : _engId;
     if (widget.isJuror && _userId != null) {
-      return _service.loadTermsForJury(userId: _userId!, neoLangId: neoLangId);
+      return _service.loadTermsForJury(
+        userId: _userId!,
+        termLangId: termLangId,
+        neoTargetLangId: neoTargetLangId,
+      );
     }
-    return _service.loadTerms(neoLangId);
+    return _service.loadTerms(termLangId: termLangId, neoTargetLangId: neoTargetLangId);
   }
 
   Future<void> _load() async {
@@ -606,7 +626,7 @@ class _VoteScreenState extends State<VoteScreen> {
                                       children: _terms
                                           .map((t) => _TermPill(
                                                 term: t,
-                                                communityLangId: _communityId,
+                                                communityLangId: _currentNeoTargetLangId,
                                                 isJuror: widget.isJuror,
                                                 onReturn: () {
                                                   setState(() { _loadDone = false; });
