@@ -22,10 +22,16 @@ class AppShell extends StatefulWidget {
   static void refreshRole() => _AppShellState._instance?._fetchRole();
 
   // For screens pushed on top of the shell from outside its own nav tabs
-  // (e.g. AwaQuiz reached via Daily Streak's "Take AwaQuiz" button, which has
-  // no `onBack` tab to fall back to) — selects the Menu tab on the
-  // already-live AppShell instance before the caller pops back down to it.
+  // (e.g. a screen with no `onBack` tab to fall back to) — selects a tab on
+  // the already-live AppShell instance before the caller pops back down to
+  // it. AwaQuiz itself is always a *tab*, not a pushed route — it has no
+  // Scaffold of its own (see awaquiz_screen.dart), so pushing it directly as
+  // a new MaterialPageRoute leaves its Text widgets with no Material
+  // ancestor and Flutter renders them with its debug fallback style (yellow,
+  // underlined). Daily Streak's "Take AwaQuiz" uses goToQuiz() + popUntil for
+  // exactly this reason.
   static void goToMenu() => _AppShellState._instance?._onNavTap(NavTab.menu);
+  static void goToQuiz() => _AppShellState._instance?._onNavTap(NavTab.quiz);
 
   @override
   State<AppShell> createState() => _AppShellState();

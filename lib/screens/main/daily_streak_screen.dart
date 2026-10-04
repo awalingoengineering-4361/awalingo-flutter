@@ -6,7 +6,6 @@ import '../../features/streaks/streak_repository.dart';
 import '../../services/auth_provider.dart';
 import '../../theme/app_theme.dart';
 import '../app_shell.dart';
-import 'awaquiz_screen.dart';
 
 // Hardcoded Tailwind brand accents this feature uses that have no existing
 // AppColors token (fuchsia/orange/amber/cyan/emerald), kept local to this
@@ -731,18 +730,17 @@ class _StreakAction extends StatelessWidget {
       width: double.infinity,
       child: ElevatedButton(
         onPressed: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => AwaQuizScreen(
-                // TEMP: should eventually return to this Daily Streak
-                // screen instead — routed to the Menu tab for now.
-                onBack: () {
-                  AppShell.goToMenu();
-                  Navigator.of(context).popUntil(ModalRoute.withName('/home'));
-                },
-              ),
-            ),
-          );
+          // AwaQuiz is a tab inside AppShell's own Scaffold, not a
+          // standalone route — it has no Scaffold/Material of its own, so
+          // pushing it directly here left its Text widgets with no Material
+          // ancestor (Flutter's debug fallback renders that as yellow,
+          // underlined text). Switch AppShell to the quiz tab and pop back
+          // to it instead.
+          // TEMP: should eventually return to this Daily Streak screen
+          // instead — routed to the Menu tab for now (AppShell's own
+          // AwaQuizScreen instance always calls back to Menu).
+          AppShell.goToQuiz();
+          Navigator.of(context).popUntil(ModalRoute.withName('/home'));
         },
         style: ElevatedButton.styleFrom(
           backgroundColor: c.primary,
