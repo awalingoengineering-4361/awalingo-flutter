@@ -1,11 +1,13 @@
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../features/awaquiz/awaquiz_progression.dart';
 import '../../services/auth_provider.dart';
 import '../../services/permissions.dart';
+import '../../services/route_observer.dart';
 import '../../services/theme_notifier.dart';
 import '../../services/webview_support.dart';
 import '../../theme/app_theme.dart';
@@ -151,7 +153,7 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
+class _ProfileScreenState extends State<ProfileScreen> with RouteAware {
   final _service = _ProfileService();
   final _notificationService = NotificationService();
   bool _loading = true;
@@ -167,7 +169,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _loadDone = true;
       _load();
     }
+    final route = ModalRoute.of(context);
+    if (route != null) appRouteObserver.subscribe(this, route);
   }
+
+  @override
+  void dispose() {
+    appRouteObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  // Refetch whenever this screen becomes visible again (e.g. returning from
+  // Daily Streak, Vote, or AwaQuiz after an action that changed the streak,
+  // cowry balance, etc.) instead of only on first load — mirrors the same
+  // fix applied to Daily Streak itself (see _DailyStreakScreenState).
+  @override
+  void didPopNext() => _load();
 
   Future<void> _load() async {
     final userId = AuthProvider.of(context).user?.id;
@@ -869,7 +886,7 @@ class _StatsGrid extends StatelessWidget {
             children: [
               Expanded(
                 child: _StatItem(
-                  icon: Icons.local_fire_department_outlined,
+                  iconAsset: 'assets/profile/streak-flame.svg',
                   label: 'Streak',
                   value: '$currentStreak ${currentStreak == 1 ? 'day' : 'days'} streak',
                   c: c,
@@ -881,7 +898,7 @@ class _StatsGrid extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: _StatItem(
-                  icon: Icons.paid_outlined,
+                  iconAsset: 'assets/profile/streak-cowry.png',
                   label: 'Cowries',
                   value: '$cowries ${cowries == 1 ? 'Cowry' : 'Cowries'}',
                   c: c,
@@ -894,7 +911,7 @@ class _StatsGrid extends StatelessWidget {
             children: [
               Expanded(
                 child: _StatItem(
-                  icon: Icons.school_outlined,
+                  iconAsset: 'assets/profile/streak-level.svg',
                   label: 'Level',
                   value: levelName ?? 'Not started',
                   c: c,
@@ -903,7 +920,7 @@ class _StatsGrid extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: _StatItem(
-                  icon: Icons.person_outline,
+                  iconAsset: 'assets/profile/streak-user-type.svg',
                   label: 'User type',
                   value: _formatEnumValue(role),
                   c: c,
@@ -918,14 +935,19 @@ class _StatsGrid extends StatelessWidget {
 }
 
 class _StatItem extends StatelessWidget {
-  final IconData icon;
+  // Mirrors ProfileStatsGrid.tsx's per-row `/assets/profile/*` image —
+  // streak-flame.svg, streak-level.svg (a Twemoji brain, not a school icon),
+  // streak-cowry.png (the only raster asset), streak-user-type.svg (a flat
+  // purple Boxicons robot, not a person icon) — all rendered at 24x24
+  // regardless of role/value, matching web's fixed `h-6 w-6` sizing.
+  final String iconAsset;
   final String label;
   final String value;
   final AppColorScheme c;
   final VoidCallback? onTap;
 
   const _StatItem({
-    required this.icon,
+    required this.iconAsset,
     required this.label,
     required this.value,
     required this.c,
@@ -934,10 +956,13 @@ class _StatItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final icon = iconAsset.endsWith('.svg')
+        ? SvgPicture.asset(iconAsset, width: 24, height: 24, fit: BoxFit.contain)
+        : Image.asset(iconAsset, width: 24, height: 24, fit: BoxFit.contain);
     final row = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 18, color: c.mutedForeground),
+        icon,
         const SizedBox(width: 8),
         Expanded(
           child: Column(

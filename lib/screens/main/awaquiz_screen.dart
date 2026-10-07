@@ -1989,7 +1989,7 @@ class _ResultScreenState extends State<_ResultScreen> {
       final recipientName = _certificateName;
       final pdfBytes = await buildAwaQuizCertificatePdf(
         language: widget.communityName,
-        levelLabel: widget.level.stageName,
+        levelLabel: widget.level.difficulty.label,
         recipientName: recipientName,
         logoBytes: logoBytes,
       );
@@ -2346,7 +2346,7 @@ class _ResultScreenState extends State<_ResultScreen> {
                       _CertificateCard(
                         recipientName: _certificateName,
                         language: widget.communityName,
-                        levelLabel: widget.level.stageName,
+                        levelLabel: widget.level.difficulty.label,
                       ),
                       const SizedBox(height: 20),
                       ElevatedButton.icon(

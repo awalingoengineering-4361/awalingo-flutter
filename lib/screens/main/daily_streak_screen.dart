@@ -324,6 +324,7 @@ class _StreakHero extends StatelessWidget {
         boxShadow: const [BoxShadow(color: Color(0x0D000000), blurRadius: 2, offset: Offset(0, 1))],
       ),
       child: Stack(
+        alignment: Alignment.topCenter,
         clipBehavior: Clip.none,
         children: [
           // Decorative blurred glow behind the ring (bg-fuchsia-100/70 blur-3xl).
