@@ -50,6 +50,7 @@ flutter:
     - assets/branding/
     - assets/illustrations/
     - assets/onboarding/
+    - assets/streaks/
 
   fonts:
     - family: Parkinsans
