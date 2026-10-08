@@ -115,9 +115,9 @@ class PaymentOptions {
 }
 
 /// Shared by the AwaQuiz and Profile "Buy Cowries" entry points — both talk
-/// to the same web app payment endpoints, differing only in the `returnTo`
-/// value (which drives where the provider's callback redirects afterward:
-/// return-target.ts maps 'awaquiz' → /awaquiz, 'profile' → /profile).
+/// to the same Supabase Edge Functions (cowry-payment-initiate,
+/// cowry-payment-callback), differing only in the `returnTo` value passed
+/// through to the provider for logging/parity with the web app.
 class PaymentService {
   final SupabaseClient _db = Supabase.instance.client;
 
@@ -187,12 +187,6 @@ class PaymentService {
     debugPrint(
       'loadPaymentOptions: countryCode=$countryCode currency=$currency rows=${rows.length} $rows',
     );
-    try {
-      final debugCount = await _db.rpc('debug_cowry_package_prices_count');
-      debugPrint('loadPaymentOptions: RLS-bypassed count -> $debugCount');
-    } catch (e) {
-      debugPrint('loadPaymentOptions: debug RPC not found/failed: $e');
-    }
 
     final pricesByPackageId = <String, double>{
       for (final row in rows)
@@ -231,33 +225,40 @@ class PaymentService {
     );
   }
 
-  // Mirrors handleTopUp (awaquiz/page.tsx) / useCowryCheckout: POSTs to the
-  // web app's /api/payments/initiate route, which talks to the chosen
-  // provider server-side and returns a hosted checkout URL. Flutter has no
-  // server of its own to hold provider secret keys, so this calls the same
-  // trusted endpoint the web client calls, authenticated with the user's
-  // Supabase access token instead of the browser session cookie the web
-  // client relies on.
+  // Mirrors handleTopUp (awaquiz/page.tsx) / useCowryCheckout, but calls this
+  // app's own `cowry-payment-initiate` Supabase Edge Function instead of the
+  // web app's /api/payments/initiate route — that route depends on a
+  // separate deployment this app has no visibility into; the Edge Function
+  // lives in the same Supabase project as everything else this app talks to
+  // and holds the provider secret keys itself. Auth is the same Supabase
+  // access token already used everywhere else in this app.
+  //
+  // `currency` must be passed through explicitly (from the same
+  // loadPaymentOptions() call that priced the package) because the Edge
+  // Function runtime has no equivalent of the Vercel/Cloudflare
+  // IP-geolocation header the web app's route derives currency from.
   Future<String> initiateTopUp({
     required String packageId,
     required String provider,
+    required String currency,
     required String returnTo, // 'awaquiz' | 'profile'
   }) async {
-    final webBaseUrl = dotenv.env['WEB_BASE_URL'] ?? '';
+    final supabaseUrl = dotenv.env['SUPABASE_URL'] ?? '';
     final response = await http.post(
-      Uri.parse('$webBaseUrl/api/payments/initiate'),
+      Uri.parse('$supabaseUrl/functions/v1/cowry-payment-initiate'),
       headers: _authHeaders(),
       body: jsonEncode({
         'attemptKey': const Uuid().v4(),
         'packageId': packageId,
         'provider': provider,
+        'currency': currency,
         'returnTo': returnTo,
       }),
     );
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     final checkoutUrl = data['checkoutUrl'] as String?;
     if (response.statusCode != 200 || checkoutUrl == null) {
-      throw Exception(data['error'] as String? ?? 'Unable to start payment.');
+      throw Exception(data['error'] as String? ?? 'Unable to start payment (${response.statusCode}).');
     }
     return checkoutUrl;
   }

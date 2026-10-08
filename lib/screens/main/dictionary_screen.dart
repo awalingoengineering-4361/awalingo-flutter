@@ -66,6 +66,12 @@ class DictionaryTerm {
     required this.neos,
     this.isDirectMatch = true,
   });
+
+  // Falls back to the top-ranked neo suggestion when there's no curated
+  // concept-linked translation yet, so the card doesn't show a bare dash for
+  // most (not-yet-admin-linked) terms — neos is already sorted best-first.
+  String? get displayTranslation =>
+      translation ?? (neos.isNotEmpty ? neos.first.text : null);
 }
 
 class NeoSuggestion {
@@ -968,7 +974,7 @@ class _WordCard extends StatelessWidget {
                         )
                       else
                         TextSpan(
-                          text: term.translation ?? '—',
+                          text: term.displayTranslation ?? '—',
                           style: TextStyle(
                             fontFamily: 'Metropolis',
                             fontFamilyFallback: kContentFontFallback,

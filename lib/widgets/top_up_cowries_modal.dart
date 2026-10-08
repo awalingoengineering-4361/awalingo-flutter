@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/payment_service.dart';
 import '../services/webview_support.dart';
@@ -7,13 +6,13 @@ import '../theme/app_theme.dart';
 import 'cowry_checkout_webview.dart';
 
 // Mirrors TopUpCowriesModal/useCowryCheckout (payments/TopUpCowriesModal.tsx):
-// fetches live provider + package pricing from /api/payments/options (prices
-// and available providers are DB-driven and vary by resolved country/currency,
-// not a static client-side list), lets the user pick a provider when more
-// than one is available, then POSTs /api/payments/initiate and opens the
-// returned checkout URL in-app (CowryCheckoutScreen) instead of a full page
-// redirect. Shared between the AwaQuiz and Profile "Buy Cowries" entry
-// points — only `returnTo` differs between them (return-target.ts).
+// fetches live provider + package pricing (prices and available providers are
+// DB-driven and vary by resolved country/currency, not a static client-side
+// list), lets the user pick a provider when more than one is available, then
+// calls the cowry-payment-initiate Edge Function and opens the returned
+// checkout URL in-app (CowryCheckoutScreen) instead of a full page redirect.
+// Shared between the AwaQuiz and Profile "Buy Cowries" entry points —
+// `returnTo` differs between them and is passed through for parity/logging.
 class TopUpCowriesModal extends StatefulWidget {
   final String returnTo; // 'awaquiz' | 'profile'
   const TopUpCowriesModal({super.key, required this.returnTo});
@@ -30,8 +29,6 @@ class _TopUpCowriesModalState extends State<TopUpCowriesModal> {
   String? _selectedProviderId;
   String? _startingPackageId;
   String? _error;
-
-  String get _expectedPath => widget.returnTo == 'profile' ? '/profile' : '/awaquiz';
 
   @override
   void initState() {
@@ -55,7 +52,7 @@ class _TopUpCowriesModalState extends State<TopUpCowriesModal> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _optionsError = 'Payment options are unavailable. Please try again.';
+          _optionsError = 'Payment options are unavailable: $e';
           _loadingOptions = false;
         });
       }
@@ -82,20 +79,16 @@ class _TopUpCowriesModalState extends State<TopUpCowriesModal> {
       final checkoutUrl = await _payments.initiateTopUp(
         packageId: pkg.id,
         provider: provider.id,
+        currency: _options!.currency,
         returnTo: widget.returnTo,
       );
       if (!mounted) return;
-      final webBaseUrl = dotenv.env['WEB_BASE_URL'] ?? '';
       CowryCheckoutResult? result;
       if (supportsInAppWebView) {
         result = await Navigator.of(context, rootNavigator: true)
             .push<CowryCheckoutResult>(
               MaterialPageRoute(
-                builder: (_) => CowryCheckoutScreen(
-                  checkoutUrl: checkoutUrl,
-                  webBaseUrl: webBaseUrl,
-                  expectedPath: _expectedPath,
-                ),
+                builder: (_) => CowryCheckoutScreen(checkoutUrl: checkoutUrl),
               ),
             );
       } else {
@@ -111,7 +104,7 @@ class _TopUpCowriesModalState extends State<TopUpCowriesModal> {
       if (mounted) {
         setState(() {
           _startingPackageId = null;
-          _error = 'Unable to start payment. Please try again.';
+          _error = 'Unable to start payment: $e';
         });
       }
     }
