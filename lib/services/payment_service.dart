@@ -149,28 +149,45 @@ class PaymentService {
   // *setting*, unrelated to the device's actual location; a user physically
   // in Nigeria can easily have an English (UK) locale), so it's only used
   // as a last-resort fallback if the network lookup fails outright.
-  Future<String> _resolveCountryCode() async {
+  // Two independent providers, tried in order, before ever falling back to
+  // device locale (which is a language/region *setting*, unrelated to the
+  // device's actual location — see the class-level note above). A single
+  // provider isn't reliable enough on its own: ipapi.co's free tier rate-
+  // limits by IP, and mobile carriers (especially in markets with heavy
+  // CGNAT, e.g. Nigeria) put many subscribers behind one shared public IP,
+  // so one popular provider being exhausted or slow/blocked on a given
+  // carrier is a real, observed failure mode, not just a hypothetical one.
+  Future<String?> _lookupCountryCode(Uri uri, String fieldName) async {
     try {
-      final response = await http
-          .get(Uri.parse('https://ipapi.co/json/'))
-          .timeout(const Duration(seconds: 4));
+      final response = await http.get(uri).timeout(const Duration(seconds: 4));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final code = data['country_code'] as String?;
+        final code = data[fieldName] as String?;
         if (code != null && code.isNotEmpty) {
-          debugPrint('resolveCountryCode: ip lookup -> $code');
+          debugPrint('resolveCountryCode: $uri -> $code');
           return code.toUpperCase();
         }
       }
-      debugPrint(
-        'resolveCountryCode: ip lookup bad response ${response.statusCode} ${response.body}',
-      );
+      debugPrint('resolveCountryCode: $uri bad response ${response.statusCode} ${response.body}');
     } catch (e) {
-      debugPrint('resolveCountryCode: ip lookup failed: $e');
+      debugPrint('resolveCountryCode: $uri failed: $e');
     }
+    return null;
+  }
+
+  Future<String> _resolveCountryCode() async {
+    final primary = await _lookupCountryCode(Uri.parse('https://ipapi.co/json/'), 'country_code');
+    if (primary != null) return primary;
+
+    final secondary = await _lookupCountryCode(
+      Uri.parse('https://get.geojs.io/v1/ip/geo.json'),
+      'country_code',
+    );
+    if (secondary != null) return secondary;
+
     final fallback =
         PlatformDispatcher.instance.locale.countryCode?.toUpperCase() ?? 'ZZ';
-    debugPrint('resolveCountryCode: falling back to locale -> $fallback');
+    debugPrint('resolveCountryCode: both ip lookups failed, falling back to locale -> $fallback');
     return fallback;
   }
 

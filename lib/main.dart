@@ -23,6 +23,14 @@ Future<void> main() async {
   // Required on Android 15+ and good practice on earlier versions.
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
+  // The UI isn't designed for landscape anywhere in the app — lock to
+  // portrait only (both upright and upside-down) so rotating the device
+  // doesn't put the app in a broken, unusable layout.
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
+
   await dotenv.load(fileName: '.env');
 
   final supabaseUrl = dotenv.env['SUPABASE_URL']!;

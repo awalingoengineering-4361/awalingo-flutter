@@ -9,6 +9,8 @@ import '../../services/auth_provider.dart';
 import '../../services/permissions.dart';
 import '../../services/route_observer.dart';
 import '../../services/theme_notifier.dart';
+import '../../features/streaks/streak_models.dart';
+import '../../features/streaks/streak_repository.dart';
 import '../../services/webview_support.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/cowry_checkout_webview.dart';
@@ -91,8 +93,15 @@ class _ProfileService {
     );
   }
 
+  // currentStreak comes from the same get_streak_dashboard RPC the Daily
+  // Streak screen uses (StreakRepository.fetchDashboard), not a raw read of
+  // user_streaks.currentDays — that column is only reconciled (freezes,
+  // missed days, elapsed-day rollover) as a side effect of that RPC, so
+  // reading it directly showed 0/stale values until the user had separately
+  // opened Daily Streak at least once. Mirrors web, where Profile and Daily
+  // Streak share the exact same dashboard query/cache for this reason.
   Future<_ProfileData> loadProfile(String userId) async {
-    final results = await Future.wait([
+    final results = await Future.wait<Object?>([
       _db
           .from('user_profile')
           .select('name, cowryBalance, allowInAppNotifications')
@@ -109,17 +118,14 @@ class _ProfileService {
           .eq('userId', userId)
           .limit(1)
           .maybeSingle(),
-      _db
-          .from('user_streaks')
-          .select('currentDays')
-          .eq('userId', userId)
-          .maybeSingle(),
+      currentStreakTimeZone()
+          .then((tz) => StreakRepository(_db).fetchDashboard(userId, tz)),
     ]);
 
-    final profile = results[0];
-    final utl = results[1];
-    final roleRow = results[2];
-    final streakRow = results[3];
+    final profile = results[0] as Map<String, dynamic>?;
+    final utl = results[1] as Map<String, dynamic>?;
+    final roleRow = results[2] as Map<String, dynamic>?;
+    final dashboard = results[3] as StreakDashboard;
     final progress = await _highestQuizProgress(userId);
 
     final lang = utl?['language'] as Map<String, dynamic>?;
@@ -132,7 +138,7 @@ class _ProfileService {
           (profile?['allowInAppNotifications'] as bool?) ?? true,
       communityName: lang?['name'] as String?,
       role: (roleMap?['name'] as String?) ?? 'EXPLORER',
-      currentStreak: (streakRow?['currentDays'] as int?) ?? 0,
+      currentStreak: dashboard.currentDays,
       level: progress.level,
       levelName: progress.levelName,
     );
