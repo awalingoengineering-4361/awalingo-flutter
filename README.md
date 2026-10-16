@@ -51,6 +51,16 @@ Use `AWALINGO_EMULATOR_ID` to select a different configured Android emulator.
 The emulator smoke check confirms startup and runtime stability; important user
 journeys still need feature-specific integration tests.
 
+The notification bell has a deterministic Android journey covering repeated
+opens, dismissal during requests, read updates, retries, and navigation:
+
+```bash
+flutter drive -d emulator-5554 --driver=test_driver/notification_bell.dart --target=integration_test/notification_bell_test.dart
+```
+
+It uses controlled HTTP responses and saves a preview screenshot under
+`build/verification/notification-bell/`.
+
 ### Stacked pull requests
 
 For dependent changes that should be reviewed separately, use GitHub's official
