@@ -797,8 +797,11 @@ class _LevelCard extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 16),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            OverflowBar(
+                              alignment: MainAxisAlignment.spaceBetween,
+                              overflowAlignment: OverflowBarAlignment.end,
+                              spacing: 12,
+                              overflowSpacing: 8,
                               children: [
                                 Text(
                                   level.isUnlocked

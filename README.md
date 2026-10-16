@@ -94,3 +94,9 @@ including connection loss, server errors, repeated recovery, pagination, and
 preserved request input. They do not contact the production backend or disable
 the emulator's physical network. Screenshots are saved to
 `build/verification/offline-recovery/`.
+
+Quiz-card layout regression coverage (phone/tablet widths and enlarged text):
+
+```bash
+flutter drive -d emulator-5554 --driver=test_driver/awaquiz_layout.dart --target=integration_test/awaquiz_layout_test.dart
+```
