@@ -8,6 +8,8 @@ import '../../features/awaquiz/awaquiz_mapper.dart';
 import '../../features/awaquiz/awaquiz_progression.dart';
 import '../../features/streaks/streak_repository.dart';
 import '../../services/awaquiz_certificate.dart';
+import '../../services/load_failure.dart';
+import '../../widgets/load_failure_view.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
 import '../../widgets/cowry_checkout_webview.dart';
@@ -166,11 +168,16 @@ class _AwaQuizService {
               .select('setId')
               .inFilter('setId', setIds)
               .eq('isActive', true);
-    final (attempts, profile, questionRows) = await (
+    // Future.wait preserves the original transport exception for the shared
+    // failure presentation (record.wait wraps it in ParallelWaitError).
+    final results = await Future.wait<Object?>([
       attemptsFuture,
       profileFuture,
       questionRowsFuture,
-    ).wait;
+    ]);
+    final attempts = results[0] as List<Map<String, dynamic>>;
+    final profile = results[1] as Map<String, dynamic>?;
+    final questionRows = results[2] as List<Map<String, dynamic>>;
     final balance = (profile?['cowryBalance'] as int?) ?? 0;
 
     return mapAwaQuizOverview(
@@ -370,7 +377,8 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
 
   final _service = _AwaQuizService();
   bool _loading = true;
-  String? _error;
+  Object? _error;
+  int _loadGeneration = 0;
   List<AwaQuizStage> _stages = [];
   int _cowryBalance = 0;
   int _languageId = 1;
@@ -395,6 +403,7 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
 
   Future<void> _load() async {
     if (!mounted) return;
+    final generation = ++_loadGeneration;
     setState(() {
       _loading = true;
       _error = null;
@@ -402,7 +411,7 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
     try {
       final userId = AuthProvider.of(context).user?.id;
       if (userId == null) {
-        if (mounted) setState(() => _loading = false);
+        if (mounted && generation == _loadGeneration) setState(() => _loading = false);
         return;
       }
 
@@ -412,13 +421,14 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
             .select('language:languages!languageId(id, name)')
             .eq('userId', userId)
             .maybeSingle();
+        if (!mounted || generation != _loadGeneration) return;
         final lang = row?['language'] as Map<String, dynamic>?;
         _languageId = (lang?['id'] as int?) ?? 1;
         _communityName = (lang?['name'] as String?) ?? 'Community';
       }
 
       final data = await _service.loadOverview(userId, _languageId);
-      if (mounted) {
+      if (mounted && generation == _loadGeneration) {
         setState(() {
           _stages = data.stages;
           _cowryBalance = data.cowryBalance;
@@ -426,9 +436,9 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
         });
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && generation == _loadGeneration) {
         setState(() {
-          _error = e.toString();
+          _error = e;
           _loading = false;
         });
       }
@@ -576,7 +586,8 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
               ),
             )
           : _error != null
-          ? _ErrorState(message: _error!, onRetry: _load)
+          ? LoadFailureView(
+              failure: LoadFailure.fromError(_error!), onRetry: _load)
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView(
@@ -2886,65 +2897,6 @@ class _ReviewRow extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-// ── Error widget ─────────────────────────────────────────────────────────────────
-
-class _ErrorState extends StatelessWidget {
-  final String message;
-  final VoidCallback onRetry;
-  const _ErrorState({required this.message, required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = AppColorScheme.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 480),
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: c.card,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: const Color(0xFFFCD34D)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.warning_amber_rounded,
-                color: Color(0xFFF59E0B),
-                size: 32,
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'AwaQuiz unavailable',
-                style: TextStyle(
-                  fontFamily: 'Parkinsans',
-                  fontWeight: FontWeight.w700,
-                  fontSize: 16,
-                  color: Color(0xFF92400E),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                message,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontFamily: 'Metropolis',
-                  fontSize: 13,
-                  color: Color(0xFF92400E),
-                ),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(onPressed: onRetry, child: const Text('Retry')),
-            ],
-          ),
-        ),
       ),
     );
   }

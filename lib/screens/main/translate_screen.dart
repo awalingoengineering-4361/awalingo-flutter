@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../services/load_failure.dart';
+import '../../widgets/load_failure_view.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
 import '../../widgets/audio_recorder_field.dart';
@@ -170,6 +172,9 @@ class _TranslateScreenState extends State<TranslateScreen> {
 
   bool _loading = true;
   bool _loadDone = false;
+  bool _bootstrapped = false;
+  Object? _loadError;
+  int _loadGeneration = 0;
   List<TermWithNeoCount> _terms = [];
   int _communityId = 1;
   int _engId = 1;
@@ -192,49 +197,66 @@ class _TranslateScreenState extends State<TranslateScreen> {
       setState(() => _loading = false);
       return;
     }
-    setState(() => _loading = true);
+    final generation = ++_loadGeneration;
+    _loadDone = true;
+    setState(() {
+      _loading = true;
+      _loadError = null;
+    });
     try {
       final boot = await _service.bootstrap(userId);
+      if (!mounted || generation != _loadGeneration) return;
       _communityId = boot.communityId;
       _engId = boot.engId;
       _communityShort = boot.communityShort;
 
       final terms =
           await _service.loadTerms(_showEnglish ? _engId : _communityId);
-      if (mounted) setState(() { _terms = terms; _loading = false; });
+      if (mounted && generation == _loadGeneration) {
+        setState(() { _terms = terms; _loading = false;
+          _bootstrapped = true;
+        });
+      }
     } catch (e) {
-      debugPrint('TranslateScreen load: $e');
-      if (mounted) setState(() => _loading = false);
+      if (mounted && generation == _loadGeneration) {
+        setState(() {
+          _loadError = e;
+          _loading = false;
+        });
+      }
     }
   }
 
   Future<void> _switchLanguage(bool showEnglish) async {
     if (_showEnglish == showEnglish) return;
-    setState(() { _showEnglish = showEnglish; _loading = true; });
-    try {
-      final terms =
-          await _service.loadTerms(showEnglish ? _engId : _communityId);
-      if (mounted) setState(() { _terms = terms; _loading = false; });
-    } catch (e) {
-      debugPrint('TranslateScreen switch: $e');
-      if (mounted) setState(() => _loading = false);
-    }
+    setState(() => _showEnglish = showEnglish);
+    await _load();
   }
 
   Future<void> _refresh() async {
-    setState(() => _loading = true);
-    try {
-      final terms =
-          await _service.loadTerms(_showEnglish ? _engId : _communityId);
-      if (mounted) setState(() { _terms = terms; _loading = false; });
-    } catch (e) {
-      if (mounted) setState(() => _loading = false);
-    }
+    await _load();
   }
 
   @override
   Widget build(BuildContext context) {
     final c = AppColorScheme.of(context);
+    if (_loadError != null) {
+      return Scaffold(
+        appBar: AppBar(title: Text('Translation Lounge')),
+        body: SafeArea(
+          child: LoadFailureView(
+            failure: LoadFailure.fromError(_loadError!),
+            onRetry: _load,
+          ),
+        ),
+      );
+    }
+    if (_loading && !_bootstrapped) {
+      return Scaffold(
+        backgroundColor: c.background,
+        body: Center(child: CircularProgressIndicator(color: c.primary)),
+      );
+    }
 
     return Scaffold(
       backgroundColor: c.background,

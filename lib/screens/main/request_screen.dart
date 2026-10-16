@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../features/streaks/streak_repository.dart';
+import '../../services/load_failure.dart';
+import '../../widgets/load_failure_view.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
 import '../../widgets/word_request_tabs.dart';
@@ -167,6 +169,9 @@ class _RequestScreenState extends State<RequestScreen> {
   final _formKey = GlobalKey<FormState>();
 
   bool _bootstrapping = true;
+  bool _loadStarted = false;
+  Object? _loadError;
+  int _loadGeneration = 0;
   bool _submitting = false;
   bool _submitted = false;
   _Bootstrap? _boot;
@@ -179,7 +184,10 @@ class _RequestScreenState extends State<RequestScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_bootstrapping) _load();
+    if (!_loadStarted) {
+      _loadStarted = true;
+      _load();
+    }
   }
 
   Future<void> _load() async {
@@ -188,6 +196,11 @@ class _RequestScreenState extends State<RequestScreen> {
       setState(() => _bootstrapping = false);
       return;
     }
+    final generation = ++_loadGeneration;
+    setState(() {
+      _bootstrapping = true;
+      _loadError = null;
+    });
     try {
       final results = await Future.wait([
         _service.bootstrap(userId),
@@ -195,10 +208,13 @@ class _RequestScreenState extends State<RequestScreen> {
       ]);
       final boot = results[0] as _Bootstrap;
       final count = results[1] as int;
-      if (mounted) setState(() { _boot = boot; _requestCount = count; _bootstrapping = false; });
+      if (mounted && generation == _loadGeneration) setState(() { _boot = boot; _requestCount = count; _bootstrapping = false; });
     } catch (e) {
       debugPrint('Request bootstrap error: $e');
-      if (mounted) setState(() => _bootstrapping = false);
+      if (mounted && generation == _loadGeneration) setState(() {
+          _bootstrapping = false;
+          _loadError = e;
+        });
     }
   }
 
@@ -241,7 +257,11 @@ class _RequestScreenState extends State<RequestScreen> {
       if (mounted) {
         setState(() => _submitting = false);
         // Mirrors submitRequest's catch-all copy (dictionary.ts).
-        ScaffoldMessenger.of(context).showSnackBar(_snack('Database Error: Failed to submit request.'));
+        final failure = LoadFailure.fromError(e);
+        ScaffoldMessenger.of(context).showSnackBar(_snack(
+            failure.isOffline
+                ? '${failure.title}. ${failure.message}'
+                : 'Database Error: Failed to submit request.'));
       }
     }
   }
@@ -309,7 +329,7 @@ class _RequestScreenState extends State<RequestScreen> {
             ),
             Divider(height: 1, color: c.border),
 
-            if (!_bootstrapping && !_submitted)
+            if (!_bootstrapping && _loadError == null && !_submitted)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
                 child: WordRequestTabs(activeIsHistory: false, requestCount: _requestCount),
@@ -320,6 +340,13 @@ class _RequestScreenState extends State<RequestScreen> {
                 child: Center(
                   child: CircularProgressIndicator(
                       color: c.primary, strokeWidth: 2),
+                ),
+              )
+            else if (_loadError != null)
+              Expanded(
+                child: LoadFailureView(
+                  failure: LoadFailure.fromError(_loadError!),
+                  onRetry: _load,
                 ),
               )
             else if (_submitted)

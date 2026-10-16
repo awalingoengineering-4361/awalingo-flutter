@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../services/load_failure.dart';
+import '../../widgets/load_failure_view.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
 import '../../widgets/word_request_tabs.dart';
@@ -191,6 +193,9 @@ class MyWordRequestsScreen extends StatefulWidget {
 class _MyWordRequestsScreenState extends State<MyWordRequestsScreen> {
   final _service = _MyWordRequestsService();
   bool _loading = true;
+  bool _loadStarted = false;
+  Object? _loadError;
+  int _loadGeneration = 0;
   String _status = 'ALL';
   int _page = 1;
   _WordRequestsPage? _data;
@@ -198,7 +203,10 @@ class _MyWordRequestsScreenState extends State<MyWordRequestsScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_loading) _load();
+    if (!_loadStarted) {
+      _loadStarted = true;
+      _load();
+    }
   }
 
   Future<void> _load() async {
@@ -207,17 +215,24 @@ class _MyWordRequestsScreenState extends State<MyWordRequestsScreen> {
       setState(() => _loading = false);
       return;
     }
-    setState(() => _loading = true);
+    final generation = ++_loadGeneration;
+    setState(() {
+      _loading = true;
+      _loadError = null;
+    });
     try {
       final data = await _service.load(userId, status: _status, page: _page);
-      if (mounted)
+      if (mounted && generation == _loadGeneration)
         setState(() {
           _data = data;
           _loading = false;
         });
     } catch (e) {
       debugPrint('MyWordRequests load: $e');
-      if (mounted) setState(() => _loading = false);
+      if (mounted && generation == _loadGeneration) setState(() {
+          _loading = false;
+          _loadError = e;
+        });
     }
   }
 
@@ -267,6 +282,11 @@ class _MyWordRequestsScreenState extends State<MyWordRequestsScreen> {
                   color: c.primary,
                   strokeWidth: 2,
                 ),
+              )
+            : _loadError != null
+            ? LoadFailureView(
+                failure: LoadFailure.fromError(_loadError!),
+                onRetry: _load,
               )
             : RefreshIndicator(
                 onRefresh: _load,
