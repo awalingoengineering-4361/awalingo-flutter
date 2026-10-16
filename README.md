@@ -81,3 +81,16 @@ currently a GitHub public-preview feature, requires all branches to live in the
 same repository, and may need to be enabled for the repository. If it is not
 available, create the same branch chain with Git and set each pull request's base
 to its immediate parent branch.
+
+Offline handling has deterministic Android journeys for AwaQuiz, Curator Test,
+AwaDiko, voting/jury/translation lounges, word requests, and request history:
+
+```bash
+flutter drive -d emulator-5554 --driver=test_driver/offline_recovery.dart --target=integration_test/offline_recovery_test.dart
+```
+
+These use controlled HTTP responses through the real screens and services,
+including connection loss, server errors, repeated recovery, pagination, and
+preserved request input. They do not contact the production backend or disable
+the emulator's physical network. Screenshots are saved to
+`build/verification/offline-recovery/`.

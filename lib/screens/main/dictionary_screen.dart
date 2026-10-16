@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../services/load_failure.dart';
+import '../../widgets/load_failure_view.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
 import '../../services/permissions.dart';
@@ -142,8 +144,7 @@ class _DictionaryService {
 
     const pageSize = 1000;
     final letters = <String>{};
-    try {
-      var offset = 0;
+    var offset = 0;
       while (true) {
         final rows = await _db
             .from('terms')
@@ -161,11 +162,7 @@ class _DictionaryService {
       final result = letters.toList()..sort(_compareAlphabetLetters);
       _alphabetCache[languageId] = result;
       return result;
-    } catch (_) {
-      // Don't cache a failed/partial fetch — worth retrying next time.
-      return letters.toList()..sort(_compareAlphabetLetters);
     }
-  }
 
   /// Paginated terms with translations and (community-language) neo suggestions.
   Future<({List<DictionaryTerm> terms, bool hasMore})> getTerms(
@@ -292,6 +289,9 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
   bool _bootstrapDone = false;
 
   bool _bootstrapLoading = true;
+  Object? _loadError;
+  bool _failedLoadMore = false;
+  int _loadGeneration = 0;
   bool _resultsLoading = false;
   bool _loadingMore = false;
   bool _hasMore = false;
@@ -339,7 +339,8 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
             _scrollController.position.maxScrollExtent - 300 &&
         _hasMore &&
         !_resultsLoading &&
-        !_loadingMore) {
+        !_loadingMore &&
+        _loadError == null) {
       _loadMore();
     }
   }
@@ -352,13 +353,17 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
       return;
     }
 
+    final generation = ++_loadGeneration;
+    setState(() {
+      _bootstrapLoading = true;
+      _loadError = null;
+      _failedLoadMore = false;
+    });
     try {
       // Single parallel call: English language ID + user's community info
       final ctx = await _service.bootstrapUserContext(userId);
-      if (ctx == null || !mounted) {
-        setState(() => _bootstrapLoading = false);
-        return;
-      }
+      if (!mounted || generation != _loadGeneration) return;
+      if (ctx == null) throw StateError('Community language is unavailable');
 
       final primaryId =
           _activeLanguage == 'english' && ctx.engId != 0 ? ctx.engId : ctx.communityId;
@@ -372,7 +377,7 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
         fetchUserRole(Supabase.instance.client, userId),
       ]);
 
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       final alphabets = results[0] as List<String>;
       final termsResult = results[1] as ({List<DictionaryTerm> terms, bool hasMore});
       final role = results[2] as String?;
@@ -393,7 +398,10 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
     } catch (e, stack) {
       debugPrint('Dictionary bootstrap error: $e');
       debugPrint(stack.toString());
-      if (mounted) setState(() => _bootstrapLoading = false);
+      if (mounted && generation == _loadGeneration) setState(() {
+          _bootstrapLoading = false;
+          _loadError = e;
+        });
     }
   }
 
@@ -427,6 +435,12 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
 
   Future<void> _fetchTerms({bool reset = true}) async {
     if (_bootstrapLoading || _communityLanguageId == null) return;
+    if (!reset && _loadingMore) return;
+    final generation = ++_loadGeneration;
+    setState(() {
+      _loadError = null;
+      _failedLoadMore = false;
+    });
     if (reset) {
       setState(() {
         _resultsLoading = true;
@@ -443,7 +457,7 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
     final skip = reset ? 0 : _skip;
 
     try {
-      final result = await _service.getTerms(
+      final resultFuture = _service.getTerms(
         primaryId,
         secondaryId,
         _communityLanguageId!,
@@ -452,8 +466,15 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
         searchQuery: _debouncedQuery,
         alphabet: _currentAlphabet,
       );
-      if (!mounted) return;
+      final results = await Future.wait([
+        resultFuture,
+        _service.getAlphabets(primaryId),
+      ]);
+      if (!mounted || generation != _loadGeneration) return;
+      final result = results[0] as ({List<DictionaryTerm> terms, bool hasMore});
+      final letters = results[1] as List<String>;
       setState(() {
+        _alphabets = letters;
         if (reset) {
           _words = result.terms;
         } else {
@@ -467,8 +488,10 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
       });
     } catch (e) {
       debugPrint('Dictionary fetch error: $e');
-      if (mounted) {
+      if (mounted && generation == _loadGeneration) {
         setState(() {
+          _loadError = e;
+          _failedLoadMore = !reset;
           _resultsLoading = false;
           _loadingMore = false;
         });
@@ -522,9 +545,6 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
       _skip = 0;
     });
     _fetchTerms();
-    _service.getAlphabets(nextId).then((letters) {
-      if (mounted) setState(() => _alphabets = letters);
-    });
   }
 
   void _switchToTranslation(DictionaryTerm term) {
@@ -546,6 +566,24 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
   @override
   Widget build(BuildContext context) {
     final c = AppColorScheme.of(context);
+    if (_loadError != null && !_failedLoadMore) {
+      return Scaffold(
+        backgroundColor: c.background,
+        appBar: AppBar(title: const Text('AwaDiko')),
+        body: SafeArea(
+          child: LoadFailureView(
+            failure: LoadFailure.fromError(_loadError!),
+            onRetry: () {
+              if (_communityLanguageId == null) {
+                _bootstrap();
+              } else {
+                _fetchTerms();
+              }
+            },
+          ),
+        ),
+      );
+    }
     if (_bootstrapLoading) {
       return Center(child: CircularProgressIndicator(color: c.primary, strokeWidth: 2));
     }
@@ -628,6 +666,17 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
             _buildTermsList(_words.where((w) => !w.isDirectMatch).toList()),
           ],
         ],
+        if (_loadError != null && _failedLoadMore)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: LoadFailureView(
+                compact: true,
+                failure: LoadFailure.fromError(_loadError!),
+                onRetry: () => _fetchTerms(reset: false),
+              ),
+            ),
+          ),
         if (_loadingMore) SliverToBoxAdapter(child: _buildLoadingMore()),
         const SliverToBoxAdapter(child: SizedBox(height: 120)),
       ],
@@ -1270,4 +1319,3 @@ class _AlphabetButton extends StatelessWidget {
     );
   }
 }
-

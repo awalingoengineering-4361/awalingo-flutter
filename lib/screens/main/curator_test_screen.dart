@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../services/load_failure.dart';
+import '../../widgets/load_failure_view.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
 import '../../services/theme_notifier.dart';
@@ -169,6 +171,9 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
   int _score = 0;
   bool _timedOut = false;
   String? _fetchError;
+  Object? _loadError;
+  bool _loadStarted = false;
+  int _loadGeneration = 0;
 
   // Timer
   static const _totalSeconds = 600; // 10 minutes
@@ -178,7 +183,10 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_loading) _load();
+    if (!_loadStarted) {
+      _loadStarted = true;
+      _load();
+    }
   }
 
   @override
@@ -193,9 +201,15 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
       setState(() => _loading = false);
       return;
     }
+    final generation = ++_loadGeneration;
+    setState(() {
+      _loading = true;
+      _loadError = null;
+      _fetchError = null;
+    });
     try {
       final questions = await _service.loadQuestions(userId);
-      if (mounted) {
+      if (mounted && generation == _loadGeneration) {
         setState(() {
           _questions = questions;
           _loading = false;
@@ -209,18 +223,18 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
       }
     } catch (e) {
       debugPrint('CuratorTest load: $e');
-      if (mounted) {
+      if (mounted && generation == _loadGeneration) {
         setState(() {
           _loading = false;
           // Mirrors curator-test/page.tsx's thrown-error fetchError copy.
-          _fetchError =
-              'Failed to load questions. Please check your target language settings.';
+          _loadError = e;
         });
       }
     }
   }
 
   void _startTimer() {
+    _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       setState(() => _secondsLeft--);
@@ -301,6 +315,19 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
         backgroundColor: c.background,
         body: Center(
           child: CircularProgressIndicator(color: c.primary, strokeWidth: 2),
+        ),
+      );
+    }
+
+    if (_loadError != null) {
+      return Scaffold(
+        backgroundColor: c.background,
+        appBar: AppBar(title: const Text('Curator Test')),
+        body: SafeArea(
+          child: LoadFailureView(
+            failure: LoadFailure.fromError(_loadError!),
+            onRetry: _load,
+          ),
         ),
       );
     }
