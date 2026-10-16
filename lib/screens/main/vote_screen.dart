@@ -4,6 +4,7 @@ import '../../features/streaks/streak_repository.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
 import '../../widgets/neo_audio_play_button.dart';
+import '../../widgets/neo_type_icon.dart';
 
 // ─── Shared data model (used by translate_screen.dart) ────────────────────────
 class TermWithNeoCount {
@@ -1176,7 +1177,7 @@ class _NeoRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _NeoTypeIcon(type: neo.type),
+          NeoTypeIcon(type: neo.type),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -1387,52 +1388,6 @@ class TermCard extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _NeoTypeIcon extends StatelessWidget {
-  final String type;
-  const _NeoTypeIcon({required this.type});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = AppColorScheme.of(context);
-    IconData icon;
-    Color color;
-    switch (type.toUpperCase()) {
-      case 'POPULAR':
-        icon = Icons.star_outline;
-        color = const Color(0xFFEAAB0B);
-        break;
-      case 'ADOPTIVE':
-        icon = Icons.recycling;
-        color = const Color(0xFF10B981);
-        break;
-      case 'FUNCTIONAL':
-        icon = Icons.build_outlined;
-        color = const Color(0xFF3B82F6);
-        break;
-      case 'ROOT':
-        icon = Icons.park_outlined;
-        color = const Color(0xFF8B5CF6);
-        break;
-      case 'CREATIVE':
-        icon = Icons.psychology_outlined;
-        color = const Color(0xFFEC4899);
-        break;
-      default:
-        icon = Icons.circle_outlined;
-        color = c.mutedForeground;
-    }
-    return Container(
-      width: 36,
-      height: 36,
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        shape: BoxShape.circle,
-      ),
-      child: Icon(icon, size: 18, color: color),
     );
   }
 }
@@ -1915,7 +1870,7 @@ class _JuryNeoRow extends StatelessWidget {
         children: [
           Row(
             children: [
-              _NeoTypeIcon(type: neo.type),
+              NeoTypeIcon(type: neo.type),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
