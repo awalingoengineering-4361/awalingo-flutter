@@ -1,13 +1,11 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
-import 'package:printing/printing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../features/awaquiz/awaquiz_mapper.dart';
 import '../../features/awaquiz/awaquiz_progression.dart';
 import '../../features/streaks/streak_repository.dart';
-import '../../services/awaquiz_certificate.dart';
+import '../../services/certificate_export_service.dart';
+import '../../widgets/certificate_actions.dart';
 import '../../services/load_failure.dart';
 import '../../widgets/load_failure_view.dart';
 import '../../theme/app_theme.dart';
@@ -1973,7 +1971,6 @@ class _ResultScreenState extends State<_ResultScreen> {
   bool _showMissed = false;
   bool _reviewUnlocked = false;
 
-  bool _downloadingCertificate = false;
 
   int get _pct =>
       widget.total > 0 ? ((widget.score / widget.total) * 100).round() : 0;
@@ -1985,55 +1982,6 @@ class _ResultScreenState extends State<_ResultScreen> {
         (meta?.userMetadata?['full_name'] as String?)?.trim() ??
         meta?.email?.split('@').first ??
         'Awalingo Learner';
-  }
-
-  // Mirrors handleDownloadCertificate (result/page.tsx:142-157).
-  Future<void> _downloadCertificate() async {
-    if (_downloadingCertificate) return;
-    setState(() => _downloadingCertificate = true);
-    try {
-      Uint8List? logoBytes;
-      try {
-        final data = await rootBundle.load(
-          'assets/branding/logo-wordmark-dark.png',
-        );
-        logoBytes = data.buffer.asUint8List();
-      } catch (_) {}
-
-      final recipientName = _certificateName;
-      final pdfBytes = await buildAwaQuizCertificatePdf(
-        language: widget.communityName,
-        levelLabel: widget.level.difficulty.label,
-        recipientName: recipientName,
-        logoBytes: logoBytes,
-      );
-
-      final fileSafeName = recipientName
-          .trim()
-          .toLowerCase()
-          .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
-          .replaceAll(RegExp(r'^-+|-+$'), '');
-      if (mounted) {
-        await Printing.sharePdf(
-          bytes: pdfBytes,
-          filename:
-              '${fileSafeName.isEmpty ? 'awalingo' : fileSafeName}-awaquiz-certificate.pdf',
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Failed to generate certificate. Please try again.',
-              style: TextStyle(fontFamily: 'Metropolis'),
-            ),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _downloadingCertificate = false);
-    }
   }
 
   // Mirrors getReviewButtonLabel (result/page.tsx:29-39).
@@ -2363,39 +2311,11 @@ class _ResultScreenState extends State<_ResultScreen> {
                         levelLabel: widget.level.difficulty.label,
                       ),
                       const SizedBox(height: 20),
-                      ElevatedButton.icon(
-                        onPressed: _downloadingCertificate
-                            ? null
-                            : _downloadCertificate,
-                        icon: _downloadingCertificate
-                            ? const SizedBox(
-                                width: 14,
-                                height: 14,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(Icons.download_rounded, size: 16),
-                        label: Text(
-                          _downloadingCertificate
-                              ? 'Preparing...'
-                              : 'Download Certificate',
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: c.primary,
-                          foregroundColor: c.primaryForeground,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 12,
-                          ),
-                          shape: const StadiumBorder(),
-                          elevation: 0,
-                          textStyle: const TextStyle(
-                            fontFamily: 'Metropolis',
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                          ),
+                      CertificateActions(
+                        certificate: CertificateDetails(
+                          recipientName: _certificateName,
+                          language: widget.communityName,
+                          levelLabel: widget.level.difficulty.label,
                         ),
                       ),
                     ],

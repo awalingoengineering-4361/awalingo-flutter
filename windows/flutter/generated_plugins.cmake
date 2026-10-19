@@ -9,6 +9,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   passkeys_windows
   printing
   record_windows
+  share_plus
   url_launcher_windows
 )
 
