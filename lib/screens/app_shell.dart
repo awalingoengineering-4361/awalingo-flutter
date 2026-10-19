@@ -43,6 +43,7 @@ class _AppShellState extends State<AppShell> {
   NavTab _currentTab = NavTab.quiz;
   bool _isJuror = false;
   String? _role;
+  final _menuRole = ValueNotifier<String?>(null);
   bool _roleLoaded = false;
   Future<void>? _roleFuture;
   // Nested navigator for the Menu tab so sub-pages (AwaQuiz level picker, etc.)
@@ -58,6 +59,7 @@ class _AppShellState extends State<AppShell> {
   @override
   void dispose() {
     if (identical(_instance, this)) _instance = null;
+    _menuRole.dispose();
     super.dispose();
   }
 
@@ -75,7 +77,10 @@ class _AppShellState extends State<AppShell> {
     if (userId == null) return;
     try {
       final role = await fetchUserRole(Supabase.instance.client, userId);
-      if (mounted) setState(() { _role = role; _isJuror = role == 'JUROR'; });
+      if (mounted) {
+        setState(() { _role = role; _isJuror = role == 'JUROR'; });
+        _menuRole.value = role;
+      }
     } catch (e) {
       debugPrint('AppShell role fetch: $e');
     }
@@ -140,8 +145,12 @@ class _AppShellState extends State<AppShell> {
         return Navigator(
           key: _menuNavKey,
           onGenerateRoute: (_) => MaterialPageRoute(
-            builder: (_) => MenuScreen(
-              onNavigate: _onNavTap,
+            builder: (_) => ValueListenableBuilder<String?>(
+              valueListenable: _menuRole,
+              builder: (_, role, _) => MenuScreen(
+                role: role,
+                onNavigate: _onNavTap,
+              ),
             ),
           ),
         );
