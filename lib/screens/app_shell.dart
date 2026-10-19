@@ -165,7 +165,7 @@ class _AppShellState extends State<AppShell> {
         if (didPop) return;
         // Let the menu's nested navigator handle back before the shell does.
         final menuNav = _menuNavKey.currentState;
-        if (menuNav != null && menuNav.canPop()) menuNav.pop();
+        if (menuNav != null && menuNav.canPop()) menuNav.maybePop();
       },
       child: Scaffold(
         backgroundColor: AppColorScheme.of(context).background,

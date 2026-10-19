@@ -163,6 +163,7 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
   final _service = _CuratorTestService();
   bool _loading = true;
   bool _submitting = false;
+  bool _confirmingExit = false;
   bool _done = false;
   List<_QuizQuestion> _questions = [];
   int _current = 0;
@@ -267,6 +268,7 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
   // there's a single back behavior during the test — matching the web,
   // which only has the one header control.
   void _handleBack() {
+    if (_submitting || _confirmingExit) return;
     if (_current > 0) {
       _prev();
     } else {
@@ -405,7 +407,9 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
 
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (_, __) => _handleBack(),
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _handleBack();
+      },
       child: Scaffold(
         backgroundColor: c.background,
         body: SafeArea(
@@ -577,40 +581,48 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
   }
 
   Future<void> _confirmExit() async {
-    final c = AppColorScheme.of(context);
-    final leave = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: c.card,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(
-          'End the test?',
-          style: TextStyle(
-            fontFamily: 'Parkinsans',
-            fontSize: 17,
-            color: c.foreground,
-          ),
-        ),
-        content: Text(
-          'Going back will end your current test session. Your progress will be lost.',
-          style: TextStyle(fontFamily: 'Metropolis', color: c.mutedForeground),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text('Keep going', style: TextStyle(color: c.foreground)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text(
-              'End test',
-              style: TextStyle(color: Color(0xFFEF4444)),
+    if (_confirmingExit || _submitting || _done) return;
+    _confirmingExit = true;
+    bool? leave;
+    try {
+      final c = AppColorScheme.of(context);
+      leave = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          backgroundColor: c.card,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text(
+            'End the test?',
+            style: TextStyle(
+              fontFamily: 'Parkinsans',
+              fontSize: 17,
+              color: c.foreground,
             ),
           ),
-        ],
-      ),
-    );
-    if (leave == true && mounted) {
+          content: Text(
+            'Going back will end your current test session. Your progress will be lost.',
+            style: TextStyle(fontFamily: 'Metropolis', color: c.mutedForeground),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text('Keep going', style: TextStyle(color: c.foreground)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text(
+                'End test',
+                style: TextStyle(color: Color(0xFFEF4444)),
+              ),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      _confirmingExit = false;
+    }
+    // The timer may finish and submit while the confirmation is open.
+    if (leave == true && mounted && !_submitting && !_done) {
       _timer?.cancel();
       Navigator.of(context).pop();
     }
