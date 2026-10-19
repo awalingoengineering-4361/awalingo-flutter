@@ -133,3 +133,16 @@ reopening, failed tests/rejected promotion, eligibility cancellation twice, and
 stale responses. Fixtures assert one attempt/promotion/reward for a pass and do
 not contact the production backend. Screenshots are saved to
 `build/verification/curator-menu/`.
+
+Curator Test exit regression coverage:
+
+```bash
+flutter drive -d emulator-5554 --driver=test_driver/curator_test_exit.dart --target=integration_test/curator_test_exit_test.dart
+```
+
+Checks root and nested Menu navigation, repeated cancellation/exit/restart,
+system Back, duplicate confirmation requests, and Back during submission using
+controlled HTTP fixtures. Abandoned runs assert zero database writes; submission
+asserts one attempt and reward. The timeout-during-confirmation race uses the
+widget tests' virtual clock and is excluded from the Android run. Screenshots
+are saved to `build/verification/curator-exit/`.
