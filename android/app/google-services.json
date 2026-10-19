@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "288087666317",
+    "project_id": "awalingo",
+    "storage_bucket": "awalingo.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:288087666317:android:10276eb73e6edf69ba7cc4",
+        "android_client_info": {
+          "package_name": "com.example.awalingo"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "288087666317-9sqnnm7oolgmskkifadjs73632bhbsid.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD7vJKzg4quX2t7hoDQb0MrDm1ZUbSnRyY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "288087666317-9sqnnm7oolgmskkifadjs73632bhbsid.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
