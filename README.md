@@ -100,3 +100,23 @@ Quiz-card layout regression coverage (phone/tablet widths and enlarged text):
 ```bash
 flutter drive -d emulator-5554 --driver=test_driver/awaquiz_layout.dart --target=integration_test/awaquiz_layout_test.dart
 ```
+
+Certificate sharing regression coverage (PNG generation, caption, repeated use,
+cancellation, failure/retry, and stale result guards):
+
+```bash
+flutter drive -d emulator-5554 --driver=test_driver/certificate_share.dart --target=integration_test/certificate_share_test.dart
+```
+
+This renders real certificate PNGs on Android and intercepts the share callback
+for deterministic payload assertions. Native chooser behavior is checked
+separately without selecting a recipient or sending a message.
+
+To check the real Android chooser, run the following device check and dismiss
+both share sheets with Android Back. Do not select a recipient or send the
+fixture certificate. It checks that cancellation unlocks sharing for another
+attempt.
+
+```bash
+flutter drive -d emulator-5554 --driver=test_driver/awaquiz_layout.dart --target=integration_test/certificate_share_native_test.dart
+```
