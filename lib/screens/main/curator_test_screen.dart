@@ -288,6 +288,8 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
       _questions.length,
     );
     if (mounted) {
+      // Publish the server-confirmed role before any result exit, including Back.
+      if (passed) AppShell.refreshRole();
       setState(() {
         _score = score;
         _passed = passed;
@@ -779,10 +781,6 @@ class _ResultView extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
               child: ElevatedButton(
                 onPressed: () {
-                  // Mirrors result/page.tsx's handlePrimaryAction: refresh
-                  // the cached role so the promotion is reflected immediately
-                  // instead of needing an app restart to notice it.
-                  if (passed) AppShell.refreshRole();
                   Navigator.of(context).popUntil((r) => r.isFirst || r.settings.name == '/home');
                 },
                 style: ElevatedButton.styleFrom(

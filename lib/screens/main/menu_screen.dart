@@ -158,7 +158,10 @@ class _HomeService {
 
 class MenuScreen extends StatefulWidget {
   final void Function(NavTab)? onNavigate;
-  const MenuScreen({super.key, this.onNavigate});
+  // The shell's server-confirmed role also invalidates this cached page when
+  // a test was launched from another entry point, such as the Translate guard.
+  final String? role;
+  const MenuScreen({super.key, this.onNavigate, this.role});
 
   @override
   State<MenuScreen> createState() => _MenuScreenState();
@@ -168,6 +171,7 @@ class _MenuScreenState extends State<MenuScreen> {
   final _service = _HomeService();
   bool _loading = true;
   bool _loadDone = false;
+  int _loadGeneration = 0;
   String? _voteWord;
   String? _suggestWord;
   String _communityName = 'Community';
@@ -189,7 +193,14 @@ class _MenuScreenState extends State<MenuScreen> {
     }
   }
 
+  @override
+  void didUpdateWidget(covariant MenuScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.role != oldWidget.role) _load();
+  }
+
   Future<void> _load() async {
+    final generation = ++_loadGeneration;
     final userId = AuthProvider.of(context).user?.id;
     if (userId == null) {
       setState(() => _loading = false);
@@ -197,7 +208,7 @@ class _MenuScreenState extends State<MenuScreen> {
     }
     try {
       final data = await _service.load(userId);
-      if (mounted) {
+      if (mounted && generation == _loadGeneration) {
         setState(() {
           _voteWord = data.voteWord;
           _suggestWord = data.suggestWord;
@@ -210,7 +221,9 @@ class _MenuScreenState extends State<MenuScreen> {
       }
     } catch (e) {
       debugPrint('MenuScreen load error: $e');
-      if (mounted) setState(() => _loading = false);
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -389,7 +402,15 @@ class _MenuScreenState extends State<MenuScreen> {
                 wordColor: isDark
                     ? const Color(0xFFFAFAFA)
                     : const Color(0xFF111111),
-                onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BecomeCuratorScreen())),
+                onTap: () async {
+                  await Navigator.of(context).push<void>(
+                    MaterialPageRoute(builder: (_) => const BecomeCuratorScreen()),
+                  );
+                  // Menu remains mounted under the test routes. Reconcile its
+                  // cached role and cards with the server when they close.
+                  if (!mounted) return;
+                  await _load();
+                },
                 c: c,
                 isDark: isDark,
               ),

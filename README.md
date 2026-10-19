@@ -120,3 +120,16 @@ attempt.
 ```bash
 flutter drive -d emulator-5554 --driver=test_driver/awaquiz_layout.dart --target=integration_test/certificate_share_native_test.dart
 ```
+
+Curator role refresh regression coverage (real Menu, test, result, and shell
+navigation with controlled HTTP responses):
+
+```bash
+flutter drive -d emulator-5554 --driver=test_driver/curator_menu_refresh.dart --target=integration_test/curator_menu_refresh_test.dart
+```
+
+Checks both test entry points, Go Home and Back after passing, immediate Menu
+reopening, failed tests/rejected promotion, eligibility cancellation twice, and
+stale responses. Fixtures assert one attempt/promotion/reward for a pass and do
+not contact the production backend. Screenshots are saved to
+`build/verification/curator-menu/`.
