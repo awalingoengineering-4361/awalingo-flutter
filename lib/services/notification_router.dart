@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../screens/main/curator_requests_screen.dart';
+import '../screens/main/notifications_screen.dart';
 import '../screens/main/dictionary_screen.dart';
 import '../screens/main/my_word_requests_screen.dart';
 import '../screens/main/vote_screen.dart';
@@ -21,6 +22,10 @@ Future<void> openNotificationLink(
   if (uri == null) return;
   final path = uri.path;
 
+  if (path == '/notifications') {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const NotificationsScreen()));
+    return;
+  }
   if (path == '/curator/requests') {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CuratorRequestsScreen()));
     return;

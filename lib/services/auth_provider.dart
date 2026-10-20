@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'auth_service.dart';
@@ -6,17 +7,18 @@ import 'auth_service.dart';
 // can read it without needing access to auth.users.
 Future<void> _syncProfileName(User user) async {
   final meta = user.userMetadata ?? {};
-  final name = (meta['name'] as String?)?.trim() ??
+  final name =
+      (meta['name'] as String?)?.trim() ??
       (meta['display_name'] as String?)?.trim() ??
       (meta['full_name'] as String?)?.trim() ??
       user.email?.split('@').first ??
       '';
   if (name.isEmpty) return;
   try {
-    await Supabase.instance.client.from('user_profile').upsert(
-      {'userId': user.id, 'name': name},
-      onConflict: 'userId',
-    );
+    await Supabase.instance.client.from('user_profile').upsert({
+      'userId': user.id,
+      'name': name,
+    }, onConflict: 'userId');
   } catch (_) {
     // Non-critical — leaderboard falls back gracefully if this fails
   }
@@ -33,8 +35,7 @@ class AuthProvider extends InheritedNotifier<AuthNotifier> {
   }) : super(notifier: notifier);
 
   static AuthNotifier of(BuildContext context) {
-    final provider =
-        context.dependOnInheritedWidgetOfExactType<AuthProvider>();
+    final provider = context.dependOnInheritedWidgetOfExactType<AuthProvider>();
     assert(provider != null, 'No AuthProvider found in widget tree');
     return provider!.notifier!;
   }
@@ -42,6 +43,8 @@ class AuthProvider extends InheritedNotifier<AuthNotifier> {
 
 class AuthNotifier extends ChangeNotifier {
   final AuthService _service = AuthService();
+  final Future<void> Function()? beforeSignOut;
+  StreamSubscription<AuthState>? _authSubscription;
 
   User? _user;
   bool _isLoading = true;
@@ -52,7 +55,7 @@ class AuthNotifier extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
-  AuthNotifier() {
+  AuthNotifier({this.beforeSignOut}) {
     _init();
   }
 
@@ -62,7 +65,7 @@ class AuthNotifier extends ChangeNotifier {
     _isLoading = false;
 
     // Listen to auth state changes — mirrors onAuthStateChange in Next.js
-    _service.authStateChanges.listen((state) {
+    _authSubscription = _service.authStateChanges.listen((state) {
       final event = state.event;
       if (event == AuthChangeEvent.signedIn ||
           event == AuthChangeEvent.initialSession ||
@@ -140,6 +143,7 @@ class AuthNotifier extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
+      await beforeSignOut?.call();
       await _service.logout();
       _user = null;
     } catch (e) {
@@ -147,6 +151,12 @@ class AuthNotifier extends ChangeNotifier {
     }
     _isLoading = false;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
   }
 
   void clearError() {
