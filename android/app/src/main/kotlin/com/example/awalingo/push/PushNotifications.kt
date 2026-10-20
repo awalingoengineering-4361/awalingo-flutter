@@ -18,11 +18,11 @@ import org.json.JSONObject
 
 class PushNotifications(private val context: Context) {
     private val manager = context.getSystemService(NotificationManager::class.java)
-    fun createChannel() { manager.createNotificationChannel(NotificationChannel(CHANNEL, "Awalingo updates", NotificationManager.IMPORTANCE_DEFAULT).apply { description = "Updates about your Awalingo activity" }) }
+    fun createChannel() { if (Build.VERSION.SDK_INT >= 26) manager.createNotificationChannel(NotificationChannel(CHANNEL, "Awalingo updates", NotificationManager.IMPORTANCE_DEFAULT).apply { description = "Updates about your Awalingo activity" }) }
     fun status(): Map<String, Any> {
         createChannel()
         val granted = Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-        val channelEnabled = manager.getNotificationChannel(CHANNEL)?.importance != NotificationManager.IMPORTANCE_NONE
+        val channelEnabled = Build.VERSION.SDK_INT < 26 || manager.getNotificationChannel(CHANNEL)?.importance != NotificationManager.IMPORTANCE_NONE
         return mapOf("granted" to (granted && channelEnabled && NotificationManagerCompat.from(context).areNotificationsEnabled()), "permissionGranted" to granted, "channelEnabled" to channelEnabled)
     }
     fun post(payload: Map<String, String>): Boolean = synchronized(PushStore.lock) {
@@ -41,6 +41,11 @@ class PushNotifications(private val context: Context) {
             .setContentIntent(pending).setAutoCancel(true).setOnlyAlertOnce(true)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE).build()
         try { manager.notify(tag, 0, notification); true } catch (_: SecurityException) { false }
+    }
+    fun settingsIntent(): Intent = if (Build.VERSION.SDK_INT >= 26) {
+        Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+    } else {
+        Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
     }
     fun cancelAll() = manager.cancelAll()
     companion object {

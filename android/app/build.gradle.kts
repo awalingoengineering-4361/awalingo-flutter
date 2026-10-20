@@ -51,5 +51,6 @@ dependencies {
     implementation("com.google.firebase:firebase-messaging")
     implementation("androidx.core:core-ktx:1.17.0")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.16.1")
     androidTestImplementation("androidx.test:runner:1.3.0")
 }

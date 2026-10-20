@@ -76,17 +76,28 @@ class AwalingoApp extends StatefulWidget {
 
 class _AwalingoAppState extends State<AwalingoApp> {
   late final AuthNotifier _authNotifier = AuthNotifier(
-    beforeSignOut: widget.pushService?.prepareForSignOut,
+    beforeSignOut: _prepareForSignOut,
   );
   late final ThemeNotifier _themeNotifier = ThemeNotifier();
   final _navigatorKey = GlobalKey<NavigatorState>();
   StreamSubscription<Map<String, dynamic>>? _pushTapSubscription;
+  int _pushAuthGeneration = 0;
+  String? _pushAuthOwner;
   late final AndroidPushTaps _pushTaps = AndroidPushTaps(
     environment: widget.pushService?.environment ?? '',
     navigate: (link, owner) async {
       final context = _navigatorKey.currentContext;
+      final generation = _pushAuthGeneration;
       if (context != null && _authNotifier.user?.id == owner) {
-        await openNotificationLink(context, owner, link);
+        await openNotificationLink(
+          context,
+          owner,
+          link,
+          canNavigate: () =>
+              mounted &&
+              generation == _pushAuthGeneration &&
+              _authNotifier.user?.id == owner,
+        );
       }
     },
   );
@@ -102,6 +113,7 @@ class _AwalingoAppState extends State<AwalingoApp> {
   void initState() {
     super.initState();
     _wasAuthenticated = _authNotifier.isAuthenticated;
+    _pushAuthOwner = _authNotifier.user?.id;
     _authNotifier.addListener(_onAuthChange);
     _pushTaps.setOwner(_authNotifier.user?.id);
     final push = widget.pushService;
@@ -124,7 +136,18 @@ class _AwalingoAppState extends State<AwalingoApp> {
     }
   }
 
+  Future<void> _prepareForSignOut() async {
+    _pushAuthGeneration++;
+    _pushTaps.setOwner(null);
+    await widget.pushService?.prepareForSignOut();
+  }
+
   void _onAuthChange() {
+    final owner = _authNotifier.user?.id;
+    if (owner != _pushAuthOwner) {
+      _pushAuthGeneration++;
+      _pushAuthOwner = owner;
+    }
     _pushTaps.setOwner(_authNotifier.user?.id);
     unawaited(widget.pushService?.reconcile(_authNotifier.user));
     final isAuth = _authNotifier.isAuthenticated;

@@ -6,7 +6,6 @@ import android.content.Intent
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.provider.Settings
 import com.google.android.gms.common.ConnectionResult
 import com.google.android.gms.common.GoogleApiAvailabilityLight
 import com.google.firebase.messaging.FirebaseMessaging
@@ -71,7 +70,7 @@ class AndroidPushBridge(private val activity: Activity, messenger: BinaryMesseng
                 "cancelNotifications" -> { notifications.cancelAll(); result.success(null) }
                 "getInitialTap" -> result.success(synchronized(PushStore.lock) { store.takeTap()?.takeIf { PushPolicy.accepts(it, store.gate()) } })
                 "openSettings" -> {
-                    activity.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName))
+                    activity.startActivity(notifications.settingsIntent())
                     result.success(null)
                 }
                 else -> result.notImplemented()
