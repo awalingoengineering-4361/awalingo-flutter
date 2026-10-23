@@ -25,11 +25,14 @@ not used.
    account push preference, including browser push. In-app and marketing consent
    remain separate.
 
-## Reviewable sender provisioning actions (not executed)
+## Sender provisioning
 
 Use the authenticated Awalingo engineering account and project `awalingo`.
-The following create an external identity/IAM role and a private credential, so
-execute only after explicit approval:
+The scoped role and sender service account below were created with approval on
+2026-10-23. The temporary test key was revoked after the controlled delivery
+check. A deployment still needs its own approved secret placement. These
+commands create external IAM resources and credentials; execute only with
+explicit authorization:
 
 ```sh
 gcloud services enable fcm.googleapis.com --project=awalingo
@@ -86,7 +89,9 @@ Record each outcome:
   not open protected content or external navigation.
 
 Fixture tests and a rendering switch are not evidence of actual FCM delivery.
-Issue 77 stays open until the real-delivery outcomes are recorded.
+The controlled real-delivery outcomes are recorded in
+[Android push validation](android-push-validation.md). Production rollout and
+iOS/APNs remain separate steps.
 
 ## Verification and rollback
 
