@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../screens/main/curator_requests_screen.dart';
+import '../screens/main/notifications_screen.dart';
 import '../screens/main/dictionary_screen.dart';
 import '../screens/main/my_word_requests_screen.dart';
 import '../screens/main/vote_screen.dart';
@@ -14,23 +15,37 @@ import '../screens/main/vote_screen.dart';
 Future<void> openNotificationLink(
   BuildContext context,
   String? userId,
-  String? link,
-) async {
+  String? link, {
+  bool Function()? canNavigate,
+}) async {
+  if (canNavigate?.call() == false) return;
   if (link == null || link.isEmpty) return;
   final uri = Uri.tryParse(link);
   if (uri == null) return;
   final path = uri.path;
 
+  if (path == '/notifications') {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const NotificationsScreen()));
+    return;
+  }
   if (path == '/curator/requests') {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CuratorRequestsScreen()));
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const CuratorRequestsScreen()));
     return;
   }
   if (path == '/dictionary') {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DictionaryScreen()));
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const DictionaryScreen()));
     return;
   }
   if (path == '/dictionary/requests') {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MyWordRequestsScreen()));
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const MyWordRequestsScreen()));
     return;
   }
   if (path.startsWith('/dictionary/request')) {
@@ -46,20 +61,24 @@ Future<void> openNotificationLink(
     final isWordOfTheDay = uri.queryParameters.containsKey('wordoftheday');
     if (termId != null && userId != null) {
       final communityLangId = await _resolveCommunityLangId(userId);
-      if (!context.mounted) return;
+      if (!context.mounted || canNavigate?.call() == false) return;
       if (communityLangId != null) {
-        Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => VoteDetailScreen(
-            termId: termId,
-            communityLangId: communityLangId,
-            isWordOfTheDay: isWordOfTheDay,
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => VoteDetailScreen(
+              termId: termId,
+              communityLangId: communityLangId,
+              isWordOfTheDay: isWordOfTheDay,
+            ),
           ),
-        ));
+        );
         return;
       }
     }
-    if (!context.mounted) return;
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const VoteScreen()));
+    if (!context.mounted || canNavigate?.call() == false) return;
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const VoteScreen()));
   }
   // Any other link (e.g. /admin/*, /manager/*) has no Flutter screen — no-op.
 }

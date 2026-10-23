@@ -1,3 +1,10 @@
+import 'services/android_push_taps.dart';
+import 'services/notification_router.dart';
+import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'services/android_push_api.dart';
+import 'services/android_push_platform.dart';
+import 'services/android_push_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // SystemChrome / SystemUiMode
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -45,20 +52,59 @@ Future<void> main() async {
     ),
   );
 
-  runApp(const AwalingoApp());
+  final push = AndroidPushService(
+    platform: NativeAndroidPushPlatform(),
+    api: HttpAndroidPushApi(
+      origin: dotenv.env['ANDROID_PUSH_API_ORIGIN'],
+      environment: Uri.parse(supabaseUrl).host,
+    ),
+    preferences: await SharedPreferences.getInstance(),
+    environment: Uri.parse(supabaseUrl).host,
+    accessToken: () =>
+        Supabase.instance.client.auth.currentSession?.accessToken,
+  );
+  runApp(AwalingoApp(pushService: push));
 }
 
 class AwalingoApp extends StatefulWidget {
-  const AwalingoApp({super.key});
+  final AndroidPushService? pushService;
+  const AwalingoApp({super.key, this.pushService});
 
   @override
   State<AwalingoApp> createState() => _AwalingoAppState();
 }
 
 class _AwalingoAppState extends State<AwalingoApp> {
-  late final AuthNotifier _authNotifier = AuthNotifier();
+  late final AuthNotifier _authNotifier = AuthNotifier(
+    beforeSignOut: _prepareForSignOut,
+  );
   late final ThemeNotifier _themeNotifier = ThemeNotifier();
   final _navigatorKey = GlobalKey<NavigatorState>();
+  StreamSubscription<Map<String, dynamic>>? _pushTapSubscription;
+  int _pushAuthGeneration = 0;
+  String? _pushAuthOwner;
+  late final AndroidPushTaps _pushTaps = AndroidPushTaps(
+    environment: widget.pushService?.environment ?? '',
+    navigate: (link, owner) async {
+      final context = _navigatorKey.currentContext;
+      final generation = _pushAuthGeneration;
+      if (context != null && _authNotifier.user?.id == owner) {
+        await openNotificationLink(
+          context,
+          owner,
+          link,
+          canNavigate: () =>
+              mounted &&
+              generation == _pushAuthGeneration &&
+              _authNotifier.user?.id == owner,
+        );
+      }
+    },
+  );
+  late final NavigatorObserver _pushNavigationObserver =
+      _PushNavigationObserver((ready) {
+        unawaited(_pushTaps.setReady(ready));
+      });
   // Track the auth state at startup so we only react to transitions,
   // not to the initial session that the SplashScreen already handles.
   late bool _wasAuthenticated;
@@ -67,32 +113,69 @@ class _AwalingoAppState extends State<AwalingoApp> {
   void initState() {
     super.initState();
     _wasAuthenticated = _authNotifier.isAuthenticated;
+    _pushAuthOwner = _authNotifier.user?.id;
     _authNotifier.addListener(_onAuthChange);
+    _pushTaps.setOwner(_authNotifier.user?.id);
+    final push = widget.pushService;
+    if (push != null) {
+      // Consume native launch data before reconciliation closes an old native gate.
+      unawaited(_readPushTap());
+      _pushTapSubscription = push.platform.events.listen((event) {
+        if (event['type'] == 'tap') unawaited(_readPushTap());
+      }, onError: (_) {});
+      unawaited(push.reconcile(_authNotifier.user));
+    }
+  }
+
+  Future<void> _readPushTap() async {
+    try {
+      final payload = await widget.pushService?.platform.getInitialTap();
+      if (payload != null && mounted) await _pushTaps.receive(payload);
+    } catch (_) {
+      /* No valid pending native tap. */
+    }
+  }
+
+  Future<void> _prepareForSignOut() async {
+    _pushAuthGeneration++;
+    _pushTaps.setOwner(null);
+    await widget.pushService?.prepareForSignOut();
   }
 
   void _onAuthChange() {
+    final owner = _authNotifier.user?.id;
+    if (owner != _pushAuthOwner) {
+      _pushAuthGeneration++;
+      _pushAuthOwner = owner;
+    }
+    _pushTaps.setOwner(_authNotifier.user?.id);
+    unawaited(widget.pushService?.reconcile(_authNotifier.user));
     final isAuth = _authNotifier.isAuthenticated;
     if (isAuth && !_wasAuthenticated) {
       // User just signed in (e.g. OAuth deep link returned on Android).
       // Navigate to home and clear the back-stack so they can't go back
       // to the sign-in screen.
-      _navigatorKey.currentState
-          ?.pushNamedAndRemoveUntil('/home', (_) => false);
+      _navigatorKey.currentState?.pushNamedAndRemoveUntil(
+        '/home',
+        (_) => false,
+      );
     }
     _wasAuthenticated = isAuth;
   }
 
   @override
   void dispose() {
+    _pushTapSubscription?.cancel();
     _authNotifier.removeListener(_onAuthChange);
     _authNotifier.dispose();
     _themeNotifier.dispose();
+    widget.pushService?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return AuthProvider(
+    final app = AuthProvider(
       notifier: _authNotifier,
       child: ThemeProvider(
         notifier: _themeNotifier,
@@ -100,7 +183,7 @@ class _AwalingoAppState extends State<AwalingoApp> {
           listenable: _themeNotifier,
           builder: (context, _) => MaterialApp(
             navigatorKey: _navigatorKey,
-            navigatorObservers: [appRouteObserver],
+            navigatorObservers: [appRouteObserver, _pushNavigationObserver],
             title: 'Awalingo',
             debugShowCheckedModeBanner: false,
             theme: AppTheme.light,
@@ -117,8 +200,10 @@ class _AwalingoAppState extends State<AwalingoApp> {
               // ── Auth ───────────────────────────────────────────
               // Force light theme on auth screens — they use AppColors (static
               // light palette) and should not adapt to dark mode.
-              '/signin': (_) => Theme(data: AppTheme.light, child: const SignInScreen()),
-              '/signup': (_) => Theme(data: AppTheme.light, child: const SignUpScreen()),
+              '/signin': (_) =>
+                  Theme(data: AppTheme.light, child: const SignInScreen()),
+              '/signup': (_) =>
+                  Theme(data: AppTheme.light, child: const SignUpScreen()),
 
               // ── Main app ───────────────────────────────────────
               '/home': (_) => const AuthGuard(child: AppShell()),
@@ -129,5 +214,29 @@ class _AwalingoAppState extends State<AwalingoApp> {
         ),
       ),
     );
+    return widget.pushService == null
+        ? app
+        : AndroidPushScope(service: widget.pushService!, child: app);
   }
+}
+
+class _PushNavigationObserver extends NavigatorObserver {
+  final void Function(bool ready) onReady;
+  _PushNavigationObserver(this.onReady);
+  void _update(Route<dynamic>? route) {
+    final name = route?.settings.name;
+    if (name == null) return;
+    final ready = ['/home', '/profile', '/request'].contains(name);
+    WidgetsBinding.instance.addPostFrameCallback((_) => onReady(ready));
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      _update(route);
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) =>
+      _update(newRoute);
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      _update(previousRoute);
 }

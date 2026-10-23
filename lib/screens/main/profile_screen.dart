@@ -1,3 +1,4 @@
+import '../../widgets/android_push_setting.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -634,25 +635,7 @@ class _ProfileScreenState extends State<ProfileScreen> with RouteAware {
                     ),
                     c: c,
                   ),
-                  // Mirrors PushNotificationsToggle.tsx: that's browser Web
-                  // Push (Service Worker + VAPID), which has no native mobile
-                  // equivalent built yet — shown disabled with an inline
-                  // reason (matching the web component's own
-                  // disables-with-reason pattern when unsupported) rather
-                  // than silently hidden.
-                  _SettingsTile(
-                    icon: Icons.notifications_active_outlined,
-                    iconBg: c.secondary,
-                    iconColor: c.mutedForeground,
-                    label: 'Allow Push Notifications',
-                    subtitle: 'Not available on this device yet',
-                    trailing: Switch(
-                      value: false,
-                      onChanged: null,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    c: c,
-                  ),
+                  const AndroidPushSetting(),
                   _SettingsTile(
                     icon: theme.isDark
                         ? Icons.wb_sunny_rounded
