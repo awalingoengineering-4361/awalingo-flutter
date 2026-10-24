@@ -589,7 +589,7 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
                 children: [
                   // Header card
                   Container(

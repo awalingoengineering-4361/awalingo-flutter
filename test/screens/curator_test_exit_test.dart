@@ -42,7 +42,17 @@ void curatorTestExitTests({
       Object? data;
       if (table == 'quiz_attempts') {
         if (request.method == 'POST') {
-          attempts.add(Map<String, dynamic>.from(jsonDecode(request.body)));
+          attempts.add({
+            ...Map<String, dynamic>.from(jsonDecode(request.body)),
+            'createdAt': DateTime.now().toUtc().toIso8601String(),
+          });
+        } else {
+          // Eligibility check: most recent failed attempt in the cooldown.
+          data = attempts
+              .where((a) => a['passed'] == false)
+              .map((a) => {'createdAt': a['createdAt']})
+              .take(1)
+              .toList();
         }
       } else if (table == 'cowry_ledger') {
         if (request.method == 'POST') {
@@ -87,6 +97,10 @@ void curatorTestExitTests({
     await start(tester);
   }
 
+  String currentQuestion(WidgetTester tester) => tester
+      .widget<Text>(find.textContaining('Greeting question').first)
+      .data!;
+
   void noWrites() {
     expect(attempts, isEmpty);
     expect(ledger, isEmpty);
@@ -94,9 +108,19 @@ void curatorTestExitTests({
     expect(fixture.requests.where((r) => r.method != 'GET'), isEmpty);
   }
 
+  // Exiting counts as a failed attempt: one quiz_attempts row (which starts
+  // the 7-day cooldown), the failure cowry penalty, and no promotion.
+  void recordedExit() {
+    expect(attempts, hasLength(1));
+    expect(attempts.single['passed'], false);
+    expect(ledger.single['eventType'], 'FAIL_CURATOR_TEST');
+    expect(ledger.single['description'], 'User exited curator test');
+    expect(promotions, 0);
+  }
+
   for (final nested in [false, true]) {
     testWidgets(
-      '${nested ? 'nested Menu' : 'root'}: cancel, exit and restart twice without writes',
+      '${nested ? 'nested Menu' : 'root'}: Stay keeps the test, Exit starts the cooldown',
       (tester) async {
         await fixture.mount(
           tester,
@@ -104,90 +128,80 @@ void curatorTestExitTests({
         );
         if (nested) await tap(tester, 'Menu');
         await enter(tester);
-        for (var run = 0; run < 2; run++) {
-          expect(
-            tester
-                .widget<ElevatedButton>(
-                  find.widgetWithText(ElevatedButton, 'Next Question'),
-                )
-                .onPressed,
-            isNull,
-          );
-          await tap(tester, 'Hello');
-          await tester.tap(find.byIcon(Icons.arrow_back));
-          await tester.pumpAndSettle();
-          expect(find.text('End the test?'), findsOneWidget);
-          await tap(tester, 'Keep going');
-          expect(find.byType(CuratorTestScreen), findsOneWidget);
-          expect(
-            tester
-                .widget<ElevatedButton>(
-                  find.widgetWithText(ElevatedButton, 'Next Question'),
-                )
-                .onPressed,
-            isNotNull,
-          );
-          await tester.tap(find.byIcon(Icons.arrow_back));
-          await tester.pumpAndSettle();
-          await tap(tester, 'End test');
-          expect(find.text('End the test?'), findsNothing);
-          expect(find.byType(CuratorTestScreen), findsNothing);
-          expect(find.text('Test Rules'), findsOneWidget);
-          noWrites();
-          expect(tester.takeException(), isNull);
-          await start(tester);
-        }
-        // Leave the fresh, unanswered third run cleanly as well.
+        await tap(tester, 'Hello');
+        await tap(tester, 'Next Question');
+        final second = currentQuestion(tester);
+
+        // Back on a later question still confirms instead of stepping back.
         await tester.tap(find.byIcon(Icons.arrow_back));
         await tester.pumpAndSettle();
-        await tap(tester, 'End test');
-        await tester.tap(find.byType(BackButton));
-        await tester.pumpAndSettle();
-        expect(find.text('Explorer'), findsOneWidget);
+        expect(find.text('Exit the test?'), findsOneWidget);
+        await tap(tester, 'Stay');
+        expect(find.byType(CuratorTestScreen), findsOneWidget);
+        expect(currentQuestion(tester), second);
         noWrites();
+
+        await tester.tap(find.byIcon(Icons.arrow_back));
+        await tester.pumpAndSettle();
+        await tap(tester, 'Exit');
+        expect(find.text('Exit the test?'), findsNothing);
+        expect(find.byType(CuratorTestScreen), findsNothing);
+        recordedExit();
+        expect(find.text('Not Yet Eligible'), findsOneWidget);
+        expect(find.text('Take the Test'), findsNothing);
         if (capture != null && nested) {
-          await capture(tester, 'curator-exit-menu');
+          await capture(tester, 'curator-exit-cooldown');
         }
+        expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pumpAndSettle();
       },
     );
   }
 
-  testWidgets('system Back goes to previous question then confirms exit once', (
-    tester,
-  ) async {
+  testWidgets('system Back confirms exit on any question', (tester) async {
     await fixture.mount(tester, const AppShell());
     await tap(tester, 'Menu');
     await enter(tester);
     await tap(tester, 'Hello');
     await tap(tester, 'Next Question');
-    final second = tester
-        .widget<Text>(find.textContaining('Greeting question').first)
-        .data;
+    final second = currentQuestion(tester);
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
-    expect(find.text('End the test?'), findsNothing);
-    expect(
-      tester.widget<Text>(find.textContaining('Greeting question').first).data,
-      isNot(second),
-    );
+    expect(find.text('Exit the test?'), findsOneWidget);
+    // Back again dismisses the dialog and keeps the test.
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
-    expect(find.text('End the test?'), findsOneWidget);
-    await tester.binding.handlePopRoute();
-    await tester.pumpAndSettle();
-    expect(find.text('End the test?'), findsNothing);
-    expect(find.byType(CuratorTestScreen), findsOneWidget);
-    await tester.binding.handlePopRoute();
-    await tester.pumpAndSettle();
-    await tap(tester, 'End test');
-    expect(find.text('Test Rules'), findsOneWidget);
+    expect(find.text('Exit the test?'), findsNothing);
+    expect(currentQuestion(tester), second);
     noWrites();
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    await tap(tester, 'Exit');
+    recordedExit();
+    expect(find.text('Not Yet Eligible'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   });
+
+  testWidgets('failing starts the cooldown on return', (tester) async {
+    await fixture.mount(tester, const MenuScreen());
+    await enter(tester);
+    await tap(tester, 'Goodbye');
+    await tap(tester, 'Next Question');
+    await tap(tester, 'Goodbye');
+    await tap(tester, 'Submit Test');
+    expect(attempts.single['passed'], false);
+    await tester.tap(find.byIcon(Icons.arrow_back));
+    await tester.pumpAndSettle();
+    expect(find.text('Not Yet Eligible'), findsOneWidget);
+    expect(find.text('Take the Test'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('rapid Back taps open only one exit confirmation', (
     tester,
   ) async {
@@ -199,9 +213,9 @@ void curatorTestExitTests({
     back();
     back();
     await tester.pumpAndSettle();
-    expect(find.text('End the test?'), findsOneWidget);
-    await tap(tester, 'Keep going');
-    expect(find.text('End the test?'), findsNothing);
+    expect(find.text('Exit the test?'), findsOneWidget);
+    await tap(tester, 'Stay');
+    expect(find.text('Exit the test?'), findsNothing);
     noWrites();
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
@@ -229,7 +243,7 @@ void curatorTestExitTests({
     await tester.pump();
     await tester.binding.handlePopRoute();
     await tester.pump();
-    expect(find.text('End the test?'), findsNothing);
+    expect(find.text('Exit the test?'), findsNothing);
     expect(find.byType(CuratorTestScreen), findsOneWidget);
     gate.complete();
     await tester.pumpAndSettle();
@@ -254,8 +268,8 @@ void curatorTestExitTests({
       expect(attempts, hasLength(1));
       expect(attempts.single['passed'], false);
       expect(ledger, hasLength(1));
-      await tap(tester, 'End test');
-      expect(find.text('End the test?'), findsNothing);
+      await tap(tester, 'Exit');
+      expect(find.text('Exit the test?'), findsNothing);
       expect(find.text('Go Home'), findsOneWidget);
       expect(find.byType(CuratorTestScreen), findsOneWidget);
       expect(promotions, 0);

@@ -58,8 +58,14 @@ async function verifyAndFulfill(
     .select("*")
     .eq("txRef", txRef)
     .maybeSingle();
-  if (!payment) return { success: false, error: "Payment record was not found." };
-  if (payment.provider !== provider) return { success: false, error: "Payment provider mismatch." };
+  if (!payment) {
+    console.error(`[cowry-payment] ${provider} ${txRef}: no cowry_payments row`);
+    return { success: false, error: "Payment record was not found." };
+  }
+  if (payment.provider !== provider) {
+    console.error(`[cowry-payment] ${provider} ${txRef}: row provider is ${payment.provider}`);
+    return { success: false, error: "Payment provider mismatch." };
+  }
 
   const adapter = provider === "FLUTTERWAVE" ? flutterwave : paystack;
   const verified = await adapter.verify({
@@ -67,6 +73,7 @@ async function verifyAndFulfill(
     providerRef: providerRef ?? payment.providerRef ?? undefined,
   });
   if (!verified || verified.provider !== provider || verified.txRef !== txRef) {
+    console.error(`[cowry-payment] ${provider} ${txRef}: provider verification failed`, verified);
     return { success: false, error: "Payment verification failed." };
   }
 
@@ -75,6 +82,7 @@ async function verifyAndFulfill(
   // when the provider reports success.
   const matches = Number(payment.amount) === verified.amount && payment.currency === verified.currency;
   const status = verified.status === "SUCCESSFUL" && !matches ? "FAILED_VERIFICATION" : verified.status;
+  console.log(`[cowry-payment] ${provider} ${txRef}: verified status=${status}, calling credit_cowry_payment`);
 
   const { data: creditResult, error } = await db.rpc("credit_cowry_payment", {
     p_tx_ref: txRef,
@@ -82,7 +90,21 @@ async function verifyAndFulfill(
     p_provider_ref: verified.providerRef,
     p_raw_response: verified.rawResponse,
   });
-  if (error) return { success: false, error: "Failed to credit cowries." };
+  if (error) {
+    // PGRST202 = PostgREST couldn't find the function: either
+    // supabase_cowry_payment_credit.sql hasn't been run on this project, or
+    // its signature differs from these named args.
+    if (error.code === "PGRST202") {
+      console.error(
+        `[cowry-payment] ${provider} ${txRef}: credit_cowry_payment DOES NOT EXIST — run supabase_cowry_payment_credit.sql`,
+        error,
+      );
+    } else {
+      console.error(`[cowry-payment] ${provider} ${txRef}: credit_cowry_payment failed (function exists)`, error);
+    }
+    return { success: false, error: "Failed to credit cowries." };
+  }
+  console.log(`[cowry-payment] ${provider} ${txRef}: credit_cowry_payment exists, result`, creditResult);
   return creditResult as FulfillResult;
 }
 

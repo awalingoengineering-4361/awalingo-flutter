@@ -60,9 +60,14 @@ class _ProfileData {
 class _ProfileService {
   final SupabaseClient _db = Supabase.instance.client;
 
-  // Mirrors getHighestQuizProgress (streaks/service.ts): the highest-ranked
-  // submitted AwaQuiz attempt (by difficulty, tie-broken by higher section),
-  // independent of the user's current target language.
+  // Mirrors getHighestQuizProgress (streaks/service.ts) exactly: it returns
+  // two *different* attempts, not one. `level` is the true personal-best
+  // difficulty — the highest-ranked submitted attempt ever (tie-broken by
+  // higher section) — but the displayed `levelName` is the stage name of
+  // the MOST RECENTLY submitted attempt. Collapsing both onto the
+  // highest-ever attempt (the original bug here) meant one early advanced
+  // attempt permanently showed e.g. "Idan" even after the user went back to
+  // playing lower stages, since the display never looked at recency at all.
   Future<({String? level, String? levelName})> _highestQuizProgress(
     String userId,
   ) async {
@@ -79,18 +84,25 @@ class _ProfileService {
       'BEGINNER' => 1,
       _ => 0,
     };
-    submitted.sort((a, b) {
+    final highest = submitted.reduce((a, b) {
       final byRank = rank(
-        b['difficulty'] as String,
-      ).compareTo(rank(a['difficulty'] as String));
-      if (byRank != 0) return byRank;
-      return (b['section'] as int).compareTo(a['section'] as int);
+        a['difficulty'] as String,
+      ).compareTo(rank(b['difficulty'] as String));
+      if (byRank != 0) return byRank > 0 ? a : b;
+      return (a['section'] as int) >= (b['section'] as int) ? a : b;
     });
-    final top = submitted.first;
-    final level = top['difficulty'] as String;
+    final latest = submitted.reduce((a, b) {
+      final at = DateTime.parse(a['submittedAt'] as String);
+      final bt = DateTime.parse(b['submittedAt'] as String);
+      return at.isAfter(bt) ? a : b;
+    });
+
     return (
-      level: level,
-      levelName: stageNameForQuizProgress(level, top['section'] as int),
+      level: highest['difficulty'] as String,
+      levelName: stageNameForQuizProgress(
+        latest['difficulty'] as String,
+        latest['section'] as int,
+      ),
     );
   }
 
@@ -697,14 +709,6 @@ class _ProfileScreenState extends State<ProfileScreen> with RouteAware {
                           builder: (_) => const PrivacySettingsScreen(),
                         ),
                       ),
-                      c: c,
-                    ),
-                    _SettingsTile(
-                      icon: Icons.description_outlined,
-                      iconBg: c.secondary,
-                      iconColor: c.mutedForeground,
-                      label: 'Privacy Policy',
-                      onTap: () => _openWebPage(context, '/privacy-policy', 'Privacy Policy'),
                       c: c,
                     ),
                   ],

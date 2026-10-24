@@ -218,14 +218,19 @@ class _RoundIconButton extends StatefulWidget {
 }
 
 class _RoundIconButtonState extends State<_RoundIconButton> with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
+  // Created only once the button first pulses. A lazy `late final` would be
+  // first touched in dispose() for never-pulsing buttons, creating a ticker
+  // on a deactivated element (a debug assertion whenever the page closes).
+  AnimationController? _pulse;
+
+  AnimationController get _controller => _pulse ??= AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 900),
   )..repeat(reverse: true);
 
   @override
   void dispose() {
-    _controller.dispose();
+    _pulse?.dispose();
     super.dispose();
   }
 

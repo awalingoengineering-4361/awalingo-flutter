@@ -945,7 +945,7 @@ class _SuggestionEntryWidgetState extends State<_SuggestionEntryWidget> {
     final type = widget.entry.type!;
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: c.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
@@ -970,7 +970,10 @@ class _SuggestionEntryWidgetState extends State<_SuggestionEntryWidget> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            // dialogContext, not the page's context: the dialog sits on the
+            // root navigator, so popping the page's navigator closed the
+            // Translate page and left the dialog open.
+            onPressed: () => Navigator.pop(dialogContext),
             child: Text('Got it',
                 style: TextStyle(
                     fontFamily: 'Metropolis',
