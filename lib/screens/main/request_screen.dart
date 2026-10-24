@@ -266,11 +266,28 @@ class _RequestScreenState extends State<RequestScreen> {
     }
   }
 
-  SnackBar _snack(String msg) => SnackBar(
-        content: Text(msg, style: const TextStyle(fontFamily: 'Metropolis')),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      );
+  // Every call site here is an error message — mirrors RequestForm.tsx's
+  // toast.error(...) treatment, using the same Tailwind red values (red-50/
+  // red-600 light, red-900@30%/red-400 dark) rather than Flutter's
+  // unstyled-by-default SnackBar, which just inherits plain theme text with
+  // no error color at all (what showed as plain black text in the APK).
+  SnackBar _snack(String msg) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return SnackBar(
+      content: Text(
+        msg,
+        style: TextStyle(
+          fontFamily: 'Metropolis',
+          color: isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626),
+        ),
+      ),
+      backgroundColor: isDark
+          ? const Color(0xFF7F1D1D).withValues(alpha: 0.3)
+          : const Color(0xFFFEF2F2),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    );
+  }
 
   void _reset() {
     _wordCtrl.clear();

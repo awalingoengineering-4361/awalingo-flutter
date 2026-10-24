@@ -13,6 +13,7 @@ import 'curator_requests_screen.dart';
 import 'dictionary_screen.dart';
 import 'my_word_requests_screen.dart';
 import 'request_screen.dart';
+import 'vote_screen.dart' show VoteDetailScreen;
 
 // ── Models ────────────────────────────────────────────────────────────────────
 
@@ -30,6 +31,8 @@ class _HomeService {
 
   Future<({
     String? voteWord,
+    int? voteTermId,
+    int? voteNeoLanguageId,
     String? suggestWord,
     String communityName,
     int communityId,
@@ -59,11 +62,15 @@ class _HomeService {
       communityLanguageId: communityId,
     );
     final voteWord = daily.voteWord.text;
+    final voteNeoLanguageId = daily.voteNeoLanguageId;
+    final voteTermId = voteNeoLanguageId == null ? null : daily.voteWord.id;
     final suggestWord =
         (role == 'CURATOR' || role == 'JUROR') ? daily.suggestWord.text : null;
 
     return (
       voteWord: voteWord,
+      voteTermId: voteTermId,
+      voteNeoLanguageId: voteNeoLanguageId,
       suggestWord: suggestWord,
       communityName: communityName,
       communityId: communityId,
@@ -173,6 +180,8 @@ class _MenuScreenState extends State<MenuScreen> {
   bool _loadDone = false;
   int _loadGeneration = 0;
   String? _voteWord;
+  int? _voteTermId;
+  int? _voteNeoLanguageId;
   String? _suggestWord;
   String _communityName = 'Community';
   int _communityId = 1;
@@ -211,6 +220,8 @@ class _MenuScreenState extends State<MenuScreen> {
       if (mounted && generation == _loadGeneration) {
         setState(() {
           _voteWord = data.voteWord;
+          _voteTermId = data.voteTermId;
+          _voteNeoLanguageId = data.voteNeoLanguageId;
           _suggestWord = data.suggestWord;
           _communityName = data.communityName;
           _communityId = data.communityId;
@@ -225,6 +236,31 @@ class _MenuScreenState extends State<MenuScreen> {
         setState(() => _loading = false);
       }
     }
+  }
+
+  // Opens the word of the day itself rather than the Voting Lounge — the
+  // lounge shows a capped, differently-ordered set of terms that often
+  // doesn't include this word, so the user could never vote on it. Reloading
+  // on return re-picks the word excluding terms just voted on, so it changes
+  // once the user has voted.
+  Future<void> _openVoteWord() async {
+    final termId = _voteTermId;
+    final neoLanguageId = _voteNeoLanguageId;
+    if (termId == null || neoLanguageId == null) {
+      widget.onNavigate?.call(NavTab.vote);
+      return;
+    }
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => VoteDetailScreen(
+          termId: termId,
+          communityLangId: neoLanguageId,
+          isWordOfTheDay: true,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    await _load();
   }
 
   Future<void> _loadLeaderboard() async {
@@ -323,19 +359,19 @@ class _MenuScreenState extends State<MenuScreen> {
             if (isExplorer)
               _RoleDescription(
                 text:
-                    "You're an Explorer — vote daily and take the Curator test to start translating words!",
+                    "Earn Cowries as an Explorer — vote daily and take the Curator test to start translating words!",
                 c: c,
               ),
             if (isCurator)
               _RoleDescription(
                 text:
-                    "You're a Curator — suggest words for your community, review pending requests, and keep building toward the JuryBoard.",
+                    "Earn Cowries as a Curator — suggest words for your community, review pending requests, and keep building toward the JuryBoard.",
                 c: c,
               ),
             if (isJuror)
               _RoleDescription(
                 text:
-                    "You're a Juror — rate community suggestions, guide the best words forward, and help protect translation quality.",
+                    "Earn Cowries as a Juror — rate community suggestions, guide the best words forward, and help protect translation quality.",
                 c: c,
               ),
 
@@ -441,7 +477,7 @@ class _MenuScreenState extends State<MenuScreen> {
                 wordColor: isDark
                     ? const Color(0xFFFAFAFA)
                     : const Color(0xFF111111),
-                onTap: () => widget.onNavigate?.call(NavTab.vote),
+                onTap: _openVoteWord,
                 c: c,
                 isDark: isDark,
               ),

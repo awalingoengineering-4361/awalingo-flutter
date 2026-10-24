@@ -96,8 +96,18 @@ class _CuratorTestService {
   // with no client-side transaction, so one failing (e.g. a still-missing
   // grant) must not silently block the others — in particular the role
   // promotion, which is the whole point of passing the test.
-  Future<bool> submitAttempt(String userId, int score, int total) async {
-    final passed = total > 0 && (score / total) >= 0.7;
+  //
+  // `exited` records a user ending the test early as a failed attempt, so it
+  // starts the same 7-day cooldown (become_curator_screen.dart) and cowry
+  // penalty as failing — otherwise exiting would be a free way out of a
+  // failing attempt.
+  Future<bool> submitAttempt(
+    String userId,
+    int score,
+    int total, {
+    bool exited = false,
+  }) async {
+    final passed = !exited && total > 0 && (score / total) >= 0.7;
 
     try {
       await _db.from('quiz_attempts').insert({
@@ -127,6 +137,8 @@ class _CuratorTestService {
         'eventType': passed ? 'PASS_CURATOR_TEST' : 'FAIL_CURATOR_TEST',
         'description': passed
             ? 'User passed curator test and was promoted to CURATOR role'
+            : exited
+            ? 'User exited curator test'
             : 'User failed curator test',
         'cowry_changed': passed ? 10 : -3,
       });
@@ -258,32 +270,25 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
     }
   }
 
-  void _prev() {
-    if (_current > 0) setState(() => _current--);
-  }
-
-  // Mirrors handleBack (curator-test/page.tsx): step to the previous
-  // question if there is one, otherwise ask for exit confirmation. Used by
-  // both the header back arrow and the hardware/gesture back action, so
-  // there's a single back behavior during the test — matching the web,
-  // which only has the one header control.
+  // Used by both the header back arrow and the hardware/gesture back action,
+  // so there's a single back behavior during the test: always confirm
+  // (Stay | Exit) rather than stepping back a question, which read as Back
+  // not working.
   void _handleBack() {
     if (_submitting || _confirmingExit) return;
-    if (_current > 0) {
-      _prev();
-    } else {
-      _confirmExit();
-    }
+    _confirmExit();
   }
+
+  int get _correctCount => _answers.entries
+      .where((e) => e.value == _questions[e.key].correctAnswer)
+      .length;
 
   Future<void> _submit({bool timedOut = false}) async {
     _timer?.cancel();
     final userId = AuthProvider.of(context).user?.id;
     if (userId == null || _submitting) return;
     setState(() => _submitting = true);
-    final score = _answers.entries
-        .where((e) => e.value == _questions[e.key].correctAnswer)
-        .length;
+    final score = _correctCount;
     final passed = await _service.submitAttempt(
       userId,
       score,
@@ -592,7 +597,7 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
           backgroundColor: c.card,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Text(
-            'End the test?',
+            'Exit the test?',
             style: TextStyle(
               fontFamily: 'Parkinsans',
               fontSize: 17,
@@ -600,18 +605,19 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
             ),
           ),
           content: Text(
-            'Going back will end your current test session. Your progress will be lost.',
+            'Exiting ends your test and counts as a failed attempt. '
+            'You can retake it in $_kCuratorTestCooldownDays days.',
             style: TextStyle(fontFamily: 'Metropolis', color: c.mutedForeground),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: Text('Keep going', style: TextStyle(color: c.foreground)),
+              child: Text('Stay', style: TextStyle(color: c.foreground)),
             ),
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, true),
               child: const Text(
-                'End test',
+                'Exit',
                 style: TextStyle(color: Color(0xFFEF4444)),
               ),
             ),
@@ -624,7 +630,17 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
     // The timer may finish and submit while the confirmation is open.
     if (leave == true && mounted && !_submitting && !_done) {
       _timer?.cancel();
-      Navigator.of(context).pop();
+      final userId = AuthProvider.of(context).user?.id;
+      if (userId != null) {
+        setState(() => _submitting = true);
+        await _service.submitAttempt(
+          userId,
+          _correctCount,
+          _questions.length,
+          exited: true,
+        );
+      }
+      if (mounted) Navigator.of(context).pop();
     }
   }
 }

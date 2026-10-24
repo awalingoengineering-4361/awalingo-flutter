@@ -607,8 +607,10 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
                 ),
               ],
             ),
+            // The page already ends above AppShell's bottom nav, so this only
+            // needs a normal floating-button margin (90 floated it mid-screen).
             Positioned(
-              bottom: 90,
+              bottom: 24,
               right: 56,
               child: _buildFloatingButton(),
             ),

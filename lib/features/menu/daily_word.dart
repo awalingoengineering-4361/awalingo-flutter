@@ -100,7 +100,11 @@ Future<DailyWord?> _wordOfTheDayForLanguage(
   return _pick(allInLanguage, dayIndex, offsetMultiplier);
 }
 
-Future<({DailyWord suggestWord, DailyWord voteWord})> getDailyWord(
+// `voteNeoLanguageId` is the language of the candidate translations the vote
+// word was picked against — what VoteDetailScreen needs as communityLangId
+// to show votable neos for it. Null when voteWord is the fallback.
+Future<({DailyWord suggestWord, DailyWord voteWord, int? voteNeoLanguageId})>
+    getDailyWord(
   SupabaseClient db, {
   required String userId,
   int? communityLanguageId,
@@ -121,6 +125,7 @@ Future<({DailyWord suggestWord, DailyWord voteWord})> getDailyWord(
 
     DailyWord? suggestWord;
     DailyWord? voteWord;
+    int? voteNeoLanguageId;
 
     if (activeLanguageId != null && neoLanguageId != null) {
       suggestWord = await _wordOfTheDayForLanguage(
@@ -140,19 +145,23 @@ Future<({DailyWord suggestWord, DailyWord voteWord})> getDailyWord(
         dayIndex: dayIndex,
         excludeTermIds: votedTermIds,
       );
+      if (voteWord != null) voteNeoLanguageId = neoLanguageId;
     }
 
     if (activeLanguageId != englishLanguageId && englishLanguageId != null) {
       final fallbackNeoLanguageId = communityLanguageId ?? englishLanguageId;
-      voteWord ??= await _wordOfTheDayForLanguage(
-        db,
-        languageId: englishLanguageId,
-        offsetMultiplier: 3,
-        type: 'voting',
-        neoLanguageId: fallbackNeoLanguageId,
-        dayIndex: dayIndex,
-        excludeTermIds: votedTermIds,
-      );
+      if (voteWord == null) {
+        voteWord = await _wordOfTheDayForLanguage(
+          db,
+          languageId: englishLanguageId,
+          offsetMultiplier: 3,
+          type: 'voting',
+          neoLanguageId: fallbackNeoLanguageId,
+          dayIndex: dayIndex,
+          excludeTermIds: votedTermIds,
+        );
+        if (voteWord != null) voteNeoLanguageId = fallbackNeoLanguageId;
+      }
       suggestWord ??= await _wordOfTheDayForLanguage(
         db,
         languageId: englishLanguageId,
@@ -166,8 +175,13 @@ Future<({DailyWord suggestWord, DailyWord voteWord})> getDailyWord(
     return (
       suggestWord: suggestWord ?? _kFallbackWord,
       voteWord: voteWord ?? _kFallbackWord,
+      voteNeoLanguageId: voteNeoLanguageId,
     );
   } catch (_) {
-    return (suggestWord: _kFallbackWord, voteWord: _kFallbackWord);
+    return (
+      suggestWord: _kFallbackWord,
+      voteWord: _kFallbackWord,
+      voteNeoLanguageId: null,
+    );
   }
 }

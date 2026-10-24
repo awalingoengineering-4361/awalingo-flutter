@@ -119,10 +119,15 @@ class _BecomeCuratorScreenState extends State<BecomeCuratorScreen> {
     }
   }
 
-  void _startTest() {
-    Navigator.of(
+  // Re-check on return: a failed or exited attempt starts the cooldown, so
+  // "Take the Test" must not stay enabled.
+  Future<void> _startTest() async {
+    await Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const CuratorTestScreen()));
+    if (!mounted) return;
+    setState(() => _loading = true);
+    await _check();
   }
 
   @override
