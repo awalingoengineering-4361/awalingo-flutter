@@ -28,7 +28,12 @@ class AndroidPushSetting extends StatelessWidget {
         leading: const Icon(Icons.notifications_active_outlined),
         title: const Text('Allow Push Notifications'),
         subtitle: const Text('Not available on this device yet'),
-        trailing: const Switch(value: false, onChanged: null),
+        trailing: const Switch(
+          value: false,
+          onChanged: null,
+          activeThumbColor: Color(0xFF9C62D9),
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
       );
     }
     return ListenableBuilder(
@@ -58,6 +63,8 @@ class AndroidPushSetting extends StatelessWidget {
                     )
                   : Switch(
                       value: state.enabled,
+                      activeThumbColor: const Color(0xFF9C62D9),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       onChanged: state.supported
                           ? (value) => unawaited(controller.setEnabled(value))
                           : null,
