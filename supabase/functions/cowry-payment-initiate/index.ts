@@ -15,7 +15,6 @@ import {
   type CowryPaymentProvider,
 } from "../_shared/cowry-packages.ts";
 import { createCowryPaymentReference } from "../_shared/reference.ts";
-import * as flutterwave from "../_shared/providers/flutterwave.ts";
 import * as paystack from "../_shared/providers/paystack.ts";
 import { corsHeaders, handleCorsPreflight } from "../_shared/cors.ts";
 
@@ -70,7 +69,7 @@ Deno.serve(async (req) => {
   if (
     typeof attemptKey !== "string" ||
     typeof packageId !== "string" ||
-    (provider !== "FLUTTERWAVE" && provider !== "PAYSTACK") ||
+    provider !== "PAYSTACK" ||
     (currency !== "NGN" && currency !== "USD")
   ) {
     return json({ error: "Invalid request." }, 400);
@@ -84,10 +83,7 @@ Deno.serve(async (req) => {
     return json({ error: `${provider} does not support ${currency}.` }, 400);
   }
 
-  if (provider === "FLUTTERWAVE" && !flutterwave.isFlutterwaveConfigured()) {
-    return json({ error: "Flutterwave is not configured.", retryable: false }, 503);
-  }
-  if (provider === "PAYSTACK" && !paystack.isPaystackConfigured()) {
+  if (!paystack.isPaystackConfigured()) {
     return json({ error: "Paystack is not configured.", retryable: false }, 503);
   }
 
@@ -205,8 +201,7 @@ Deno.serve(async (req) => {
     `${SUPABASE_URL}/functions/v1/cowry-payment-callback/${provider.toLowerCase()}` +
     `?tx_ref=${encodeURIComponent(txRef)}&return_to=${encodeURIComponent(returnTo)}`;
 
-  const adapter = provider === "FLUTTERWAVE" ? flutterwave : paystack;
-  const result = await adapter.initiate({
+  const result = await paystack.initiate({
     amount,
     currency,
     customerEmail: user.email ?? "",
