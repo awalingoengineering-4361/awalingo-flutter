@@ -1,0 +1,6 @@
+{
+  "SUPABASE_URL": "https://cmcuzyqkwmprlwmdviys.supabase.co",
+  "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNtY3V6eXFrd21wcmx3bWR2aXlzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0ODY4NjYsImV4cCI6MjA5MTA2Mjg2Nn0.9briZfXD0JZWIa8m2jdj_runZU7D2jgO71AZxhhKQe8",
+  "WEB_BASE_URL": "https://staging.awalingo.org",
+  "ANDROID_PUSH_API_ORIGIN": "https://awalingo-push-staging.vercel.app"
+}

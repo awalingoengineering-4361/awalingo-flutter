@@ -33,6 +33,67 @@ scripts/start-change awaquiz-stages
 The command creates `codex/awaquiz-stages`. Commits directly to `main` or
 `master` are blocked by the pre-commit hook.
 
+### Staging and production configuration
+
+Keep environment settings in `config/staging.json` and
+`config/production.json`. Both files use these fields:
+
+| Field | Purpose |
+| --- | --- |
+| `SUPABASE_URL` | Supabase endpoint for the selected environment |
+| `SUPABASE_ANON_KEY` | Public Supabase anon or publishable key |
+| `WEB_BASE_URL` | Website URL for the selected environment |
+| `ANDROID_PUSH_API_ORIGIN` | Push API origin connected to the same Supabase environment |
+
+These files may contain public client settings only. Never put Supabase
+service-role keys, payment secrets, Firebase service-account credentials, or
+signing passwords in them.
+
+The app reads the selected JSON file through Dart compile-time definitions.
+Supabase, payment requests/callbacks, profile website links, and Android push
+all use that configuration. A selected config must supply all four fields;
+use an empty push origin to disable push in development. It never fills missing
+fields from `.env`.
+
+Keep a `.env` file present because it remains a declared Flutter asset. For a
+fresh checkout, copy `.env.example` to `.env`. Its values are used only for
+debug/profile startup without any of these compile-time settings. Selected
+JSON values take precedence as a complete set. Private server credentials must
+not be placed in `.env` either, because it is bundled with the app.
+
+Run a staging build with:
+
+```bash
+flutter run --dart-define-from-file=config/staging.json
+```
+
+Run a production build with:
+
+```bash
+flutter run --dart-define-from-file=config/production.json
+```
+
+Build a production Android App Bundle for Play Store preparation with:
+
+```bash
+flutter build appbundle --release \
+  --dart-define-from-file=config/production.json
+```
+
+The environment is selected at build time. Each installed build uses the
+settings it was built with; changing a JSON file does not update an installed
+app or a running debug session. Stop and rerun the command after changing
+environments; hot reload does not replace compile-time settings.
+
+Release startup rejects `.env` fallback and requires these production origins:
+`https://auth.awalingo.org`, `https://www.awalingo.org`, and
+`https://awalingo-push-production.vercel.app`. Local HTTP is accepted only in
+debug mode; other backend origins must use HTTPS. If production domains change,
+update the allowlist in `lib/config/app_config.dart` as well as the JSON config.
+This guard runs when the app starts, not during bundle compilation. The bundle
+command does not replace release signing, launching and verifying the release
+artifact, or the Play Console submission steps.
+
 ### Verify a runtime change
 
 Run the complete verification workflow before considering a code change ready:

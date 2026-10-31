@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:ui' show PlatformDispatcher;
 import 'package:flutter/foundation.dart' show debugPrint;
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../config/app_config.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -260,7 +260,7 @@ class PaymentService {
     required String currency,
     required String returnTo, // 'awaquiz' | 'profile'
   }) async {
-    final supabaseUrl = dotenv.env['SUPABASE_URL'] ?? '';
+    final supabaseUrl = AppConfig.current.supabaseUrl;
     final response = await http.post(
       Uri.parse('$supabaseUrl/functions/v1/cowry-payment-initiate'),
       headers: _authHeaders(),

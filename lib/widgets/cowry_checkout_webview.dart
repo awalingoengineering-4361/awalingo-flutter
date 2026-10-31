@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../config/app_config.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import '../theme/app_theme.dart';
 
@@ -29,7 +29,7 @@ class _CowryCheckoutScreenState extends State<CowryCheckoutScreen> {
   late final WebViewController _controller;
   bool _loading = true;
   late final String _completeUrl =
-      '${dotenv.env['SUPABASE_URL'] ?? ''}/functions/v1/cowry-payment-callback/complete';
+      '${AppConfig.current.supabaseUrl}/functions/v1/cowry-payment-callback/complete';
 
   @override
   void initState() {

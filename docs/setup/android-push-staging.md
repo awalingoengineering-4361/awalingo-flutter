@@ -17,10 +17,13 @@ public configuration; Firebase sender credentials belong only on the server.
 
 ```sh
 scripts/verify-change
-flutter build apk --release --split-per-abi --target=lib/main.dart
+flutter build apk --debug --target=lib/main.dart --dart-define-from-file=config/staging.json
 ```
 
-The ARM64 artifact is `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`.
+The current staging artifact is `build/app/outputs/flutter-apk/app-debug.apk`.
+Staging verification now uses debug mode: release startup requires the production
+config documented in the README. The release results below describe the older
+staging activation build and are retained as historical verification evidence.
 This build uses staging data. Actual production and iOS/APNs rollout are separate.
 
 Verification passed 129 Flutter tests and the normal emulator build, install,

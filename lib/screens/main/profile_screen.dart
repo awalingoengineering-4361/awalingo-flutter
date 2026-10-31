@@ -1,7 +1,7 @@
 import '../../widgets/android_push_setting.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../../config/app_config.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -304,7 +304,13 @@ class _ProfileScreenState extends State<ProfileScreen> with RouteAware {
   // support (desktop, web), where it falls back to the external browser
   // instead of crashing.
   Future<void> _openWebPage(BuildContext context, String path, String title) async {
-    final webBaseUrl = dotenv.env['WEB_BASE_URL'] ?? '';
+    final webBaseUrl = AppConfig.current.webBaseUrl;
+    if (webBaseUrl == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Website is not configured for this build.')),
+      );
+      return;
+    }
     final url = '$webBaseUrl$path';
     if (supportsInAppWebView) {
       Navigator.of(context).push(MaterialPageRoute(
