@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/load_failure.dart';
 import '../../widgets/load_failure_view.dart';
+import '../../widgets/app_buttons.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
 import '../../services/theme_notifier.dart';
@@ -49,19 +50,22 @@ class _CuratorTestService {
         .maybeSingle();
     final langId = utl?['languageId'] as int? ?? 1;
 
+    // No .limit(): an unordered limit returns the same first rows every time,
+    // so every attempt drew from one fixed pool and saw the same questions.
     final rows = await _db
         .from('quiz_questions')
         .select('id, text, options, correctAnswer')
         .eq('languageId', langId)
-        .eq('isActive', true)
-        .limit(30);
+        .eq('isActive', true);
 
     if (rows.isEmpty) return [];
 
-    // Shuffle in memory and take up to 10 — mirrors getCuratorTestQuestions
-    // (quiz.ts), which fetches randomized rows and slices to QUIZ_QUESTION_COUNT.
+    // Returns the whole active pool, shuffled: the screen uses the first 10
+    // (mirrors getCuratorTestQuestions in quiz.ts, which fetches randomized
+    // rows and slices to QUIZ_QUESTION_COUNT) and keeps the rest as spares
+    // for replacing a question after the user leaves the app.
     final list = List.of(rows)..shuffle();
-    return list.take(10).map((r) {
+    return list.map((r) {
       final rawOptions = r['options'];
       List<_QuizOption> options;
       if (rawOptions is List) {
@@ -171,13 +175,18 @@ class CuratorTestScreen extends StatefulWidget {
   State<CuratorTestScreen> createState() => _CuratorTestScreenState();
 }
 
-class _CuratorTestScreenState extends State<CuratorTestScreen> {
+class _CuratorTestScreenState extends State<CuratorTestScreen>
+    with WidgetsBindingObserver {
   final _service = _CuratorTestService();
   bool _loading = true;
   bool _submitting = false;
   bool _confirmingExit = false;
   bool _done = false;
   List<_QuizQuestion> _questions = [];
+  // Unused questions from the pool, swapped in when the user leaves the app
+  // mid-test so they can't look up the answer and come back to it.
+  List<_QuizQuestion> _spares = [];
+  bool _leftApp = false;
   int _current = 0;
   final Map<int, String> _answers = {};
   bool? _passed;
@@ -194,6 +203,48 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
   Timer? _timer;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // paused/hidden = the user actually left (switched apps, home screen,
+    // locked the phone). Brief `inactive` overlays like the notification
+    // shade don't count.
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _leftApp = true;
+    } else if (state == AppLifecycleState.resumed && _leftApp) {
+      _leftApp = false;
+      _replaceCurrentQuestion();
+    }
+  }
+
+  void _replaceCurrentQuestion() {
+    if (!mounted || _loading || _done || _submitting || _questions.isEmpty) {
+      return;
+    }
+    setState(() {
+      _answers.remove(_current);
+      if (_spares.isNotEmpty) {
+        _questions[_current] = _spares.removeAt(0);
+      } else {
+        // Pool exhausted: at least reorder the options so a remembered
+        // position doesn't carry over.
+        final q = _questions[_current];
+        _questions[_current] = _QuizQuestion(
+          id: q.id,
+          text: q.text,
+          options: List.of(q.options)..shuffle(),
+          correctAnswer: q.correctAnswer,
+        );
+      }
+    });
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_loadStarted) {
@@ -204,6 +255,7 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     super.dispose();
   }
@@ -224,7 +276,8 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
       final questions = await _service.loadQuestions(userId);
       if (mounted && generation == _loadGeneration) {
         setState(() {
-          _questions = questions;
+          _questions = questions.take(10).toList();
+          _spares = questions.skip(10).toList();
           _loading = false;
           if (questions.isEmpty) {
             // Mirrors curator-test/page.tsx's empty-questions fetchError copy.
@@ -375,15 +428,13 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
                       style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, color: c.mutedForeground),
                     ),
                     const SizedBox(height: 24),
-                    ElevatedButton(
-                      onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst || r.settings.name == '/home'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: c.primary,
-                        foregroundColor: c.primaryForeground,
-                        minimumSize: const Size(double.infinity, 48),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.of(context).popUntil((r) => r.isFirst || r.settings.name == '/home'),
+                        style: AppButtonStyles.primary(c),
+                        child: const Text('Return to Home'),
                       ),
-                      child: const Text('Return to Home', style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, fontWeight: FontWeight.w600)),
                     ),
                   ],
                 ),
@@ -558,20 +609,11 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
 
                         ElevatedButton(
                           onPressed: answered == null || _submitting ? null : _next,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: c.foreground,
-                            foregroundColor: c.background,
-                            disabledBackgroundColor: c.secondary,
-                            disabledForegroundColor: c.mutedForeground,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: const StadiumBorder(),
-                            elevation: 0,
-                          ),
+                          style: AppButtonStyles.primary(c),
                           // "Sumitting..." mirrors the web's copy verbatim (a typo in the source).
                           child: _submitting
-                              ? Text('Sumitting...', style: TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600, fontSize: 16, color: c.background))
-                              : Text(isLastQuestion ? 'Submit Test' : 'Next Question',
-                                  style: const TextStyle(fontFamily: 'Metropolis', fontWeight: FontWeight.w600, fontSize: 16)),
+                              ? Text('Sumitting...', style: TextStyle(color: c.background))
+                              : Text(isLastQuestion ? 'Submit Test' : 'Next Question'),
                         ),
                       ],
                     ),
@@ -610,16 +652,15 @@ class _CuratorTestScreenState extends State<CuratorTestScreen> {
             style: TextStyle(fontFamily: 'Metropolis', color: c.mutedForeground),
           ),
           actions: [
-            TextButton(
+            OutlinedButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: Text('Stay', style: TextStyle(color: c.foreground)),
+              style: AppButtonStyles.secondary(c),
+              child: const Text('Stay'),
             ),
-            TextButton(
+            ElevatedButton(
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text(
-                'Exit',
-                style: TextStyle(color: Color(0xFFEF4444)),
-              ),
+              style: AppButtonStyles.destructive(c),
+              child: const Text('Exit'),
             ),
           ],
         ),
@@ -807,20 +848,14 @@ class _ResultView extends StatelessWidget {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.of(context).popUntil((r) => r.isFirst || r.settings.name == '/home');
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: c.foreground,
-                  foregroundColor: c.background,
-                  minimumSize: const Size(double.infinity, 56),
-                  shape: const StadiumBorder(),
-                  elevation: 0,
-                ),
-                child: const Text(
-                  'Go Home',
-                  style: TextStyle(fontFamily: 'Metropolis', fontSize: 17, fontWeight: FontWeight.w600),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).popUntil((r) => r.isFirst || r.settings.name == '/home');
+                  },
+                  style: AppButtonStyles.primary(c),
+                  child: const Text('Go Home'),
                 ),
               ),
             ),

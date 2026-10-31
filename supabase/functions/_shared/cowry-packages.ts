@@ -20,15 +20,15 @@ export function findCowryPackageDefinition(
   return COWRY_PACKAGE_DEFINITIONS.find((pkg) => pkg.id === packageId);
 }
 
-// Mirrors the registered provider adapters' static metadata
-// (flutterwave.ts/paystack.ts: id/supportedCurrencies/minimumAmounts).
-export type CowryPaymentProvider = "FLUTTERWAVE" | "PAYSTACK";
+// Mirrors the registered provider adapter's static metadata
+// (paystack.ts: id/supportedCurrencies/minimumAmounts). Paystack is the only
+// payment provider.
+export type CowryPaymentProvider = "PAYSTACK";
 
 export const PROVIDER_DEFINITIONS: Record<
   CowryPaymentProvider,
   { supportedCurrencies: string[]; minimumAmounts: Record<string, number> }
 > = {
-  FLUTTERWAVE: { supportedCurrencies: ["NGN"], minimumAmounts: { NGN: 0.01 } },
   PAYSTACK: {
     supportedCurrencies: ["NGN", "USD"],
     minimumAmounts: { NGN: 50.0, USD: 2.0 },

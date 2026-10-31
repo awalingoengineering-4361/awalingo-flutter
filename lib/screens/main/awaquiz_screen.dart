@@ -8,6 +8,7 @@ import '../../services/certificate_export_service.dart';
 import '../../widgets/certificate_actions.dart';
 import '../../services/load_failure.dart';
 import '../../widgets/load_failure_view.dart';
+import '../../widgets/app_buttons.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
 import '../../widgets/cowry_checkout_webview.dart';
@@ -460,7 +461,7 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
   }
 
   // Mirrors handleStartQuiz's insufficient-balance branch (awaquiz/page.tsx):
-  // offers "Earn Cowries" (back to Menu) or "Top Up" (real Flutterwave
+  // offers "Earn Cowries" (back to Menu) or "Top Up" (real Paystack
   // payment) instead of just refusing to start.
   void _showNotEnoughCowriesModal(AwaQuizStage level) {
     final missing = level.difficulty.cowryCost - _cowryBalance;
@@ -1100,20 +1101,8 @@ class _StartModalState extends State<_StartModal> {
                     onPressed: _starting
                         ? null
                         : () => Navigator.of(context).pop(),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 13),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      side: BorderSide(color: c.border),
-                    ),
-                    child: Text(
-                      'Cancel',
-                      style: TextStyle(
-                        fontFamily: 'Metropolis',
-                        color: c.foreground,
-                      ),
-                    ),
+                    style: AppButtonStyles.secondary(c),
+                    child: const Text('Cancel'),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1139,33 +1128,17 @@ class _StartModalState extends State<_StartModal> {
                             });
                             widget.onStart(_reportError);
                           },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: st.buttonBg,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 13),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      elevation: 0,
-                      disabledBackgroundColor: c.secondary,
-                      disabledForegroundColor: c.mutedForeground,
-                    ),
+                    style: AppButtonStyles.primary(c),
                     child: _starting
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 18,
                             height: 18,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: Colors.white,
+                              color: c.mutedForeground,
                             ),
                           )
-                        : const Text(
-                            'Start quiz',
-                            style: TextStyle(
-                              fontFamily: 'Metropolis',
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                        : const Text('Start quiz'),
                   ),
                 ),
               ],
@@ -1791,45 +1764,16 @@ class _QuizScreenState extends State<_QuizScreen> with WidgetsBindingObserver {
                       children: [
                         OutlinedButton(
                           onPressed: _openExitDialog,
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 24,
-                              vertical: 13,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            side: BorderSide(color: c.border),
-                          ),
-                          child: Text(
-                            'Exit',
-                            style: TextStyle(
-                              fontFamily: 'Metropolis',
-                              color: c.foreground,
-                            ),
-                          ),
+                          style: AppButtonStyles.secondary(c),
+                          child: const Text('Exit'),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: ElevatedButton(
                             onPressed: selectedAnswer != null ? _next : null,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: st.buttonBg,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 13),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              elevation: 0,
-                              disabledBackgroundColor: c.secondary,
-                              disabledForegroundColor: c.mutedForeground,
-                            ),
+                            style: AppButtonStyles.primary(c),
                             child: Text(
                               isLast ? 'Submit quiz' : 'Next question',
-                              style: const TextStyle(
-                                fontFamily: 'Metropolis',
-                                fontWeight: FontWeight.w600,
-                              ),
                             ),
                           ),
                         ),
@@ -1885,46 +1829,16 @@ class _QuizScreenState extends State<_QuizScreen> with WidgetsBindingObserver {
                                 Expanded(
                                   child: OutlinedButton(
                                     onPressed: _closeExitDialog,
-                                    style: OutlinedButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 13,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      side: BorderSide(color: c.border),
-                                    ),
-                                    child: Text(
-                                      'Keep going',
-                                      style: TextStyle(
-                                        fontFamily: 'Metropolis',
-                                        color: c.foreground,
-                                      ),
-                                    ),
+                                    style: AppButtonStyles.secondary(c),
+                                    child: const Text('Keep going'),
                                   ),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: ElevatedButton(
                                     onPressed: _doExit,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFFE11D48),
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 13,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      elevation: 0,
-                                    ),
-                                    child: const Text(
-                                      'End quiz',
-                                      style: TextStyle(
-                                        fontFamily: 'Metropolis',
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
+                                    style: AppButtonStyles.destructive(c),
+                                    child: const Text('End quiz'),
                                   ),
                                 ),
                               ],
@@ -2419,23 +2333,8 @@ class _ResultScreenState extends State<_ResultScreen> {
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: st.buttonBg,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: const Text(
-                    'Try another level',
-                    style: TextStyle(
-                      fontFamily: 'Metropolis',
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
-                    ),
-                  ),
+                  style: AppButtonStyles.primary(c),
+                  child: const Text('Try another level'),
                 ),
               ),
               const SizedBox(height: 10),
@@ -2445,22 +2344,8 @@ class _ResultScreenState extends State<_ResultScreen> {
                   onPressed: () => Navigator.of(
                     context,
                   ).popUntil((r) => r.isFirst || r.settings.name == '/home'),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    side: BorderSide(color: c.border),
-                  ),
-                  child: Text(
-                    'Back to menu',
-                    style: TextStyle(
-                      fontFamily: 'Metropolis',
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
-                      color: c.foreground,
-                    ),
-                  ),
+                  style: AppButtonStyles.secondary(c),
+                  child: const Text('Back to menu'),
                 ),
               ),
             ],

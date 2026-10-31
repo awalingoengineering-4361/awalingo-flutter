@@ -23,8 +23,8 @@ const List<_CowryPackageDefinition> _kCowryPackageDefinitions = [
   _CowryPackageDefinition('diamond-1000', 'Diamond', 1000),
 ];
 
-// Mirrors the registered provider adapters (lib/payments/flutterwave.ts,
-// lib/payments/paystack.ts) — id/label/supportedCurrencies/minimumAmounts
+// Mirrors the registered provider adapter (lib/payments/paystack.ts) —
+// Paystack is the only payment provider. id/label/supportedCurrencies/minimumAmounts
 // are static there too. What we can't replicate is PAYMENT_PROVIDERS env
 // ordering or adapter.isConfigured() (server-side secret presence), since
 // that's runtime config on the web deployment this app never sees. A
@@ -44,7 +44,6 @@ class _ProviderDefinition {
 }
 
 const List<_ProviderDefinition> _kProviderDefinitions = [
-  _ProviderDefinition('FLUTTERWAVE', 'Flutterwave', ['NGN'], {'NGN': '0.01'}),
   _ProviderDefinition(
     'PAYSTACK',
     'Paystack',
@@ -76,7 +75,7 @@ class PaymentPackageOption {
 }
 
 class PaymentProviderOption {
-  final String id; // 'FLUTTERWAVE' | 'PAYSTACK'
+  final String id; // 'PAYSTACK'
   final String label;
   final List<PaymentPackageOption> packages;
   const PaymentProviderOption({

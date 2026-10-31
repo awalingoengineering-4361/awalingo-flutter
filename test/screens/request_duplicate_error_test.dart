@@ -57,6 +57,15 @@ void main() {
       isEmpty,
       reason: 'a duplicate must not be inserted',
     );
+    // The form defaults to the community (local) language as the source, as
+    // on web: the fixture's community language is id 2, English is id 1.
+    final duplicateCheck = fixture.requests.lastWhere(
+      (r) =>
+          r.url.pathSegments.last == 'translation_requests' &&
+          r.url.queryParameters.containsKey('word'),
+    );
+    expect(duplicateCheck.url.queryParameters['sourceLanguageId'], 'eq.2');
+    expect(duplicateCheck.url.queryParameters['targetLanguageId'], 'eq.1');
     expect(tester.takeException(), isNull);
   });
 }

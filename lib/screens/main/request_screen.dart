@@ -177,8 +177,9 @@ class _RequestScreenState extends State<RequestScreen> {
   _Bootstrap? _boot;
   int? _requestCount;
 
-  // true = English→Community, false = Community→English
-  bool _engIsSource = true;
+  // true = English→Community, false = Community→English. Defaults to the
+  // community (local) language as the source, matching the web form.
+  bool _engIsSource = false;
   int? _selectedPosId;
 
   @override
@@ -292,7 +293,7 @@ class _RequestScreenState extends State<RequestScreen> {
   void _reset() {
     _wordCtrl.clear();
     _meaningCtrl.clear();
-    setState(() { _submitted = false; _selectedPosId = null; _engIsSource = true; });
+    setState(() { _submitted = false; _selectedPosId = null; _engIsSource = false; });
   }
 
   @override
