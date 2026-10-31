@@ -7,7 +7,7 @@ import 'services/android_push_platform.dart';
 import 'services/android_push_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // SystemChrome / SystemUiMode
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'config/app_config.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'theme/app_theme.dart';
 import 'services/auth_provider.dart';
@@ -38,10 +38,10 @@ Future<void> main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  await dotenv.load(fileName: '.env');
-
-  final supabaseUrl = dotenv.env['SUPABASE_URL']!;
-  final supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY']!;
+  await AppConfig.initialize();
+  final config = AppConfig.current;
+  final supabaseUrl = config.supabaseUrl;
+  final supabaseAnonKey = config.supabaseAnonKey;
 
   await Supabase.initialize(
     url: supabaseUrl,
@@ -55,7 +55,7 @@ Future<void> main() async {
   final push = AndroidPushService(
     platform: NativeAndroidPushPlatform(),
     api: HttpAndroidPushApi(
-      origin: dotenv.env['ANDROID_PUSH_API_ORIGIN'],
+      origin: config.pushApiOrigin,
       environment: Uri.parse(supabaseUrl).host,
     ),
     preferences: await SharedPreferences.getInstance(),

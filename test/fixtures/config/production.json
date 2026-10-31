@@ -1,0 +1,7 @@
+{
+  "APP_CONFIG_TEST_FIXTURE": "production",
+  "SUPABASE_URL": "https://auth.awalingo.org",
+  "SUPABASE_ANON_KEY": "public-fixture-key",
+  "WEB_BASE_URL": "https://www.awalingo.org",
+  "ANDROID_PUSH_API_ORIGIN": "https://awalingo-push-production.vercel.app"
+}

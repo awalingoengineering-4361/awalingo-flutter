@@ -1,0 +1,6 @@
+{
+  "SUPABASE_URL": "https://auth.awalingo.org",
+  "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5hdG9tcHBrc21iamxlenRueHpiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjExMjQwMjMsImV4cCI6MjA3NjcwMDAyM30.8jXPhS-xFDP27TwCbB0tXwZ_JjcSX2Nkk1qzLeyIfhw",
+  "WEB_BASE_URL": "https://www.awalingo.org",
+  "ANDROID_PUSH_API_ORIGIN": "https://awalingo-push-production.vercel.app"
+}
