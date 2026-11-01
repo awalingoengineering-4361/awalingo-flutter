@@ -1,9 +1,43 @@
 // Mirrors neolingo: src/lib/payments/paystack.ts — same API calls, same env
 // var names, so the existing Paystack dashboard secret key can be reused
 // verbatim for this function's secrets.
-import type { InitiateInput, InitiateResult, PaymentStatus, VerifiedPayment, VerifyInput } from "./flutterwave.ts";
-
 const PAYSTACK_API_URL = Deno.env.get("PAYSTACK_API_URL") ?? "https://api.paystack.co";
+
+export type PaymentStatus = "SUCCESSFUL" | "FAILED" | "PENDING";
+
+export interface InitiateInput {
+  amount: number;
+  currency: string;
+  customerEmail: string;
+  customerName: string;
+  packageId: string;
+  cowries: number;
+  returnUrl: string;
+  txRef: string;
+}
+
+export interface InitiateResult {
+  success: boolean;
+  checkoutUrl?: string;
+  providerRef?: string;
+  rawResponse?: unknown;
+  error?: string;
+}
+
+export interface VerifyInput {
+  txRef: string;
+  providerRef?: string;
+}
+
+export interface VerifiedPayment {
+  amount: number;
+  currency: string;
+  provider: "PAYSTACK";
+  providerRef: string;
+  rawResponse: unknown;
+  status: PaymentStatus;
+  txRef: string;
+}
 
 export function isPaystackConfigured(): boolean {
   return Boolean(Deno.env.get("PAYSTACK_SECRET_KEY"));

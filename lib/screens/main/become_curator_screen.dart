@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../widgets/app_buttons.dart';
 import '../../theme/app_theme.dart';
 import '../../services/auth_provider.dart';
 import '../../services/permissions.dart';
@@ -304,23 +305,12 @@ class _RulesView extends StatelessWidget {
 
           const SizedBox(height: 24),
 
-          ElevatedButton(
-            onPressed: onStart,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: c.primary,
-              foregroundColor: c.primaryForeground,
-              minimumSize: const Size(double.infinity, 52),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: const Text(
-              'Take the Test',
-              style: TextStyle(
-                fontFamily: 'Metropolis',
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: onStart,
+              style: AppButtonStyles.primary(c),
+              child: const Text('Take the Test'),
             ),
           ),
           const SizedBox(height: 32),

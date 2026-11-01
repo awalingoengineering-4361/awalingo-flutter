@@ -1,10 +1,9 @@
-// Mirrors neolingo: src/app/api/payments/{flutterwave,paystack}/callback/route.ts
+// Mirrors neolingo: src/app/api/payments/paystack/callback/route.ts
 // and .../webhook/route.ts, plus the shared src/lib/payments/verification.ts
 // (verifyAndFulfillPayment) + fulfillment.ts. Deployed with JWT verification
 // OFF — the payment provider's redirect/webhook has no Supabase session.
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import type { CowryPaymentProvider } from "../_shared/cowry-packages.ts";
-import * as flutterwave from "../_shared/providers/flutterwave.ts";
 import * as paystack from "../_shared/providers/paystack.ts";
 import { corsHeaders, handleCorsPreflight } from "../_shared/cors.ts";
 
@@ -24,19 +23,6 @@ function completeUrl(payment: "success" | "failed" | "missing", returnTo: string
     `${SUPABASE_URL}/functions/v1/cowry-payment-callback/complete` +
     `?payment=${payment}&return_to=${encodeURIComponent(returnTo)}`
   );
-}
-
-async function resolveTxRefByProviderRef(
-  provider: CowryPaymentProvider,
-  providerRef: string,
-): Promise<string | null> {
-  const { data } = await db
-    .from("cowry_payments")
-    .select("txRef")
-    .eq("provider", provider)
-    .eq("providerRef", providerRef)
-    .limit(2);
-  return data && data.length === 1 ? (data[0].txRef as string) : null;
 }
 
 interface FulfillResult {
@@ -67,8 +53,7 @@ async function verifyAndFulfill(
     return { success: false, error: "Payment provider mismatch." };
   }
 
-  const adapter = provider === "FLUTTERWAVE" ? flutterwave : paystack;
-  const verified = await adapter.verify({
+  const verified = await paystack.verify({
     txRef,
     providerRef: providerRef ?? payment.providerRef ?? undefined,
   });
@@ -108,48 +93,20 @@ async function verifyAndFulfill(
   return creditResult as FulfillResult;
 }
 
-async function handleUserCallback(provider: "flutterwave" | "paystack", url: URL): Promise<Response> {
+async function handleUserCallback(url: URL): Promise<Response> {
   const returnTo = url.searchParams.get("return_to") ?? "awaquiz";
-  const cowryProvider: CowryPaymentProvider = provider === "flutterwave" ? "FLUTTERWAVE" : "PAYSTACK";
-
-  let txRef: string | null;
-  let providerRef: string | undefined;
-  if (provider === "flutterwave") {
-    txRef = url.searchParams.get("tx_ref") ?? url.searchParams.get("reference");
-    providerRef =
-      url.searchParams.get("transaction_id") ??
-      url.searchParams.get("id") ??
-      url.searchParams.get("charge_id") ??
-      undefined;
-    if (!txRef && providerRef) {
-      txRef = await resolveTxRefByProviderRef("FLUTTERWAVE", providerRef);
-    }
-  } else {
-    txRef = url.searchParams.get("reference");
-  }
+  const txRef = url.searchParams.get("reference");
 
   if (!txRef) {
     return Response.redirect(completeUrl("missing", returnTo), 302);
   }
 
-  const result = await verifyAndFulfill(cowryProvider, txRef, providerRef);
+  const result = await verifyAndFulfill("PAYSTACK", txRef);
   return Response.redirect(completeUrl(result.success ? "success" : "failed", returnTo), 302);
 }
 
-async function handleWebhook(provider: "flutterwave" | "paystack", req: Request): Promise<Response> {
+async function handleWebhook(req: Request): Promise<Response> {
   const rawBody = await req.text();
-  if (provider === "flutterwave") {
-    const ok = await flutterwave.verifyWebhookSignature(rawBody, req.headers.get("flutterwave-signature"));
-    if (!ok) return json({ error: "Invalid signature" }, 401);
-    const body = JSON.parse(rawBody);
-    const providerRef = body?.data?.id != null ? String(body.data.id) : undefined;
-    const reference = body?.data?.reference as string | undefined;
-    const txRef = reference ?? (providerRef ? await resolveTxRefByProviderRef("FLUTTERWAVE", providerRef) : null);
-    if (!txRef) return json({ ok: true });
-    await verifyAndFulfill("FLUTTERWAVE", txRef, providerRef);
-    return json({ ok: true });
-  }
-
   const ok = await paystack.verifyWebhookSignature(rawBody, req.headers.get("x-paystack-signature"));
   if (!ok) return json({ error: "Invalid signature" }, 401);
   const body = JSON.parse(rawBody);
@@ -174,12 +131,12 @@ Deno.serve(async (req) => {
     return json({ ok: true });
   }
 
-  if (req.method === "GET" && (sub[0] === "flutterwave" || sub[0] === "paystack")) {
-    return handleUserCallback(sub[0], url);
+  if (req.method === "GET" && sub[0] === "paystack") {
+    return handleUserCallback(url);
   }
 
-  if (req.method === "POST" && sub[0] === "webhook" && (sub[1] === "flutterwave" || sub[1] === "paystack")) {
-    return handleWebhook(sub[1], req);
+  if (req.method === "POST" && sub[0] === "webhook" && sub[1] === "paystack") {
+    return handleWebhook(req);
   }
 
   return json({ error: "Not found" }, 404);

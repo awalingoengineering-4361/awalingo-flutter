@@ -10,7 +10,7 @@
 --
 -- Called only from the Edge Function via the service-role key, with the
 -- caller already having verified the transaction against the payment
--- provider (Flutterwave/Paystack) and decided p_status — this function
+-- provider (Paystack) and decided p_status — this function
 -- trusts that input and only owns the DB-side idempotency + crediting.
 create or replace function public.credit_cowry_payment(
   p_tx_ref text,
