@@ -5,15 +5,12 @@ import '../test/widgets/notification_bell_test.dart' as bell_tests;
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
-  var converted = false;
   var captures = 0;
   group('notification list', () {
     list_tests.notificationClickTests(
       screenshot: (tester, name) async {
-        if (!converted) {
-          await binding.convertFlutterSurfaceToImage();
-          converted = true;
-        }
+        // The binding restores the Android surface after every test.
+        await binding.convertFlutterSurfaceToImage();
         await tester.pumpAndSettle();
         await binding.takeScreenshot('$name-${++captures}');
       },
