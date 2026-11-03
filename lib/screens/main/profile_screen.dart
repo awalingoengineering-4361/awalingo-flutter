@@ -1,3 +1,4 @@
+import 'account_deletion_screen.dart';
 import '../../widgets/android_push_setting.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
@@ -748,6 +749,17 @@ class _ProfileScreenState extends State<ProfileScreen> with RouteAware {
                   ],
 
                   Divider(height: 1, color: c.border),
+
+                  _SettingsTile(
+                    icon: Icons.person_remove_outlined,
+                    iconBg: c.secondary,
+                    iconColor: Theme.of(context).colorScheme.error,
+                    label: 'Delete account',
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const AccountDeletionScreen(),
+                    )),
+                    c: c,
+                  ),
 
                   // Log Out
                   Padding(

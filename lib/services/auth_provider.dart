@@ -153,6 +153,31 @@ class AuthNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// A durable deletion request must also clear this device when offline.
+  Future<void> logoutAfterDeletion(String ownerId) async {
+    if (_user?.id != ownerId) return;
+    try {
+      await beforeSignOut?.call();
+    } catch (_) {
+      /* Server cleanup will remove registrations as well. */
+    }
+    final activeId = Supabase.instance.client.auth.currentUser?.id;
+    if (_user?.id != ownerId || (activeId != null && activeId != ownerId)) {
+      return;
+    }
+    try {
+      await Supabase.instance.client.auth.signOut(scope: SignOutScope.local);
+    } catch (_) {
+      /* Supabase clears the local session before its network call. */
+    }
+    final currentId = Supabase.instance.client.auth.currentUser?.id;
+    if (currentId != null && currentId != ownerId) return;
+    _user = null;
+    _error = null;
+    _isLoading = false;
+    notifyListeners();
+  }
+
   @override
   void dispose() {
     _authSubscription?.cancel();

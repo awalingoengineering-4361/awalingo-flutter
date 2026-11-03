@@ -1,3 +1,4 @@
+import { checkAccountDeletion } from "../_shared/account-deletion.ts";
 // Mirrors neolingo: src/lib/payments/initiation.ts (initiateCowryPayment).
 // Deployed with JWT verification ON — only an authenticated app user's
 // Supabase access token (the same Bearer token payment_service.dart already
@@ -53,6 +54,17 @@ Deno.serve(async (req) => {
   if (userError || !userData.user) return json({ error: "Unauthorized" }, 401);
   const user = userData.user;
 
+  // The Auth user may still exist while its durable deletion is pending.
+  // The service-role client bypasses RLS, so check explicitly before checkout.
+  const db = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+  const deletionState = await checkAccountDeletion(() => db
+    .from("account_deletion_requests")
+    .select("userId")
+    .eq("userId", user.id)
+    .maybeSingle());
+  if (deletionState === 'unavailable') return json({ error: "Payments are currently unavailable.", retryable: true }, 503);
+  if (deletionState === 'deleting') return json({ error: "Account deletion has been requested.", retryable: false }, 403);
+
   let body: Record<string, unknown>;
   try {
     body = await req.json();
@@ -86,8 +98,6 @@ Deno.serve(async (req) => {
   if (!paystack.isPaystackConfigured()) {
     return json({ error: "Paystack is not configured.", retryable: false }, 503);
   }
-
-  const db = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
   const { data: priceRow } = await db
     .from("cowry_package_prices")
