@@ -20,11 +20,11 @@ handles announcements, absent links and destinations unavailable natively.
 
 ### Task 1: Notification item navigation and read lifecycle
 
-- [ ] Reproduce list-to-list announcement taps and absent-link taps with failing
+- [x] Reproduce list-to-list announcement taps and absent-link taps with failing
   widget tests; cover both bell and full list, repeat opening and persisted reads.
-- [ ] Implement shared item-aware routing, themed detail display and guarded list
+- [x] Implement shared item-aware routing, themed detail display and guarded list
   read/open lifecycle; retain existing push routing contract behavior.
-- [ ] Run targeted tests, complete scripts/verify-change in order, inspect launch
+- [x] Run targeted tests, complete scripts/verify-change in order, inspect launch
   evidence, then run deterministic Android navigation fixtures with screenshots.
-- [ ] Obtain one fresh whole-change review, resolve important findings with tests,
+- [x] Obtain one fresh whole-change review, resolve important findings with tests,
   record actual results and keep the branch ready for the user's PR request.

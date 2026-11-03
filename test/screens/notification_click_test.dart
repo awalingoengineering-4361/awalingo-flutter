@@ -35,10 +35,14 @@ void notificationClickTests({
   late Map<String, dynamic> notification;
   late List<http.Request> writes;
   Completer<void>? pendingWrite;
+  Completer<http.Response>? pendingLanguage;
+  var deleted = false;
   var failWrite = false;
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     pendingWrite = null;
+    pendingLanguage = null;
+    deleted = false;
     failWrite = false;
     writes = [];
     notification = {
@@ -58,6 +62,13 @@ void notificationClickTests({
         localStorage: EmptyLocalStorage(),
       ),
       httpClient: MockClient((request) async {
+        if (request.method == 'DELETE') {
+          deleted = true;
+          return http.Response('', 204, request: request);
+        }
+        if (request.url.path.endsWith('/user_target_languages')) {
+          return pendingLanguage!.future;
+        }
         if (request.method == 'PATCH') {
           writes.add(request);
           await pendingWrite?.future;
@@ -69,12 +80,16 @@ void notificationClickTests({
               headers: {'content-type': 'application/json'},
             );
           }
-          notification['isRead'] = true;
+          if (!deleted) {
+            notification['isRead'] = true;
+          }
           return http.Response('', 204, request: request);
         }
         return http.Response(
           jsonEncode(
-            request.url.queryParameters['userId'] == 'eq.notification-owner'
+            !deleted &&
+                    request.url.queryParameters['userId'] ==
+                        'eq.notification-owner'
                 ? [notification]
                 : [],
           ),
@@ -247,6 +262,61 @@ void notificationClickTests({
     expect(writes, hasLength(1));
     await tester.pumpWidget(const SizedBox());
   });
+
+  for (final clearAll in [false, true]) {
+    testWidgets(
+      'deleting ${clearAll ? 'all notifications' : 'the item'} cancels pending open',
+      (tester) async {
+        await mount(tester);
+        pendingWrite = Completer<void>();
+        await tester.tap(find.text('Community announcement'));
+        await tester.pump();
+        if (clearAll) {
+          await tester.tap(find.byTooltip('Clear all'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Clear All'));
+          await tester.pumpAndSettle();
+        } else {
+          await tester.drag(find.byType(Dismissible), const Offset(-800, 0));
+          await tester.pumpAndSettle();
+        }
+        expect(deleted, isTrue);
+        pendingWrite!.complete();
+        await tester.pumpAndSettle();
+        expect(find.text('Notification'), findsNothing);
+        expect(find.text('No notifications'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
+
+  testWidgets(
+    'deleting the item during destination lookup cancels navigation',
+    (tester) async {
+      notification['link'] = '/vote?termId=7';
+      pendingLanguage = Completer<http.Response>();
+      await mount(tester);
+      await tester.tap(find.text('Community announcement'));
+      await tester.pumpAndSettle();
+      expect(notification['isRead'], isTrue);
+      await tester.drag(find.byType(Dismissible), const Offset(-800, 0));
+      await tester.pumpAndSettle();
+      expect(deleted, isTrue);
+      pendingLanguage!.complete(
+        http.Response(
+          '{"languageId":2}',
+          200,
+          headers: {'content-type': 'application/json'},
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(NotificationsScreen), findsOneWidget);
+      expect(find.text('No notifications'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 
   for (final switchAccount in [false, true]) {
     testWidgets(

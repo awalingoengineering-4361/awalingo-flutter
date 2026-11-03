@@ -162,6 +162,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     bool active() =>
         mounted &&
         sessionVersion == _sessionVersion &&
+        _items.any((item) => item.id == notification.id) &&
         AuthProvider.of(context).user?.id == userId &&
         ModalRoute.of(context)?.isCurrent == true;
     if (_opening || userId == null || !active()) return;
