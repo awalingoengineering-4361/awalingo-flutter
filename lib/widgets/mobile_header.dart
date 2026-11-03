@@ -28,6 +28,8 @@ class _AppMobileHeaderState extends State<AppMobileHeader> with WidgetsBindingOb
 
   int _unread = 0;
   bool _notificationsMenuOpen = false;
+  String? _notificationOwner;
+  int _notificationSession = 0;
   String? _communityShort;
   String? _communityFlagCode;
   bool _communityLoaded = false;
@@ -56,6 +58,11 @@ class _AppMobileHeaderState extends State<AppMobileHeader> with WidgetsBindingOb
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final owner = AuthProvider.of(context).user?.id;
+    if (owner != _notificationOwner) {
+      _notificationOwner = owner;
+      _notificationSession++;
+    }
     _loadUnread();
     if (!_communityLoaded) {
       _communityLoaded = true;
@@ -115,6 +122,9 @@ class _AppMobileHeaderState extends State<AppMobileHeader> with WidgetsBindingOb
   Future<void> _showNotificationsMenu() async {
     final userId = AuthProvider.of(context).user?.id;
     if (userId == null || _notificationsMenuOpen) return;
+    final session = _notificationSession;
+    bool currentOwner() => mounted && session == _notificationSession &&
+        AuthProvider.of(context).user?.id == userId;
 
     final renderBox = _bellKey.currentContext?.findRenderObject() as RenderBox?;
     final overlay =
@@ -145,16 +155,20 @@ class _AppMobileHeaderState extends State<AppMobileHeader> with WidgetsBindingOb
             padding: EdgeInsets.zero,
             child: NotificationPreviewMenu(
               userId: userId,
+              canInteract: currentOwner,
               service: _notificationService,
               onUnreadChanged: (count) {
-                if (mounted && AuthProvider.of(context).user?.id == userId) {
+                if (currentOwner()) {
                   setState(() => _unread = count);
                 }
               },
               onOpen: (notification) {
                 Navigator.of(context).pop();
                 unawaited(
-                  openNotificationLink(context, userId, notification.link),
+                  openAppNotification(
+                    context, userId, notification,
+                    canNavigate: currentOwner,
+                  ),
                 );
               },
               onViewAll: () {

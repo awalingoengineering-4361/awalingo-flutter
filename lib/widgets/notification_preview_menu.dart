@@ -7,6 +7,7 @@ const _kNotificationPreviewLimit = 5;
 // A real State owns the request lifecycle; async callbacks never outlive it.
 class NotificationPreviewMenu extends StatefulWidget {
   final String userId;
+  final bool Function() canInteract;
   final NotificationService service;
   final ValueChanged<int> onUnreadChanged;
   final ValueChanged<AppNotification> onOpen;
@@ -15,6 +16,7 @@ class NotificationPreviewMenu extends StatefulWidget {
   const NotificationPreviewMenu({
     super.key,
     required this.userId,
+    required this.canInteract,
     required this.service,
     required this.onUnreadChanged,
     required this.onOpen,
@@ -35,7 +37,10 @@ class _NotificationPreviewMenuState extends State<NotificationPreviewMenu> {
   String? _actionError;
 
   // A popped popup stays mounted while its reverse animation runs.
-  bool get _isActive => mounted && ModalRoute.of(context)?.isCurrent == true;
+  bool get _isActive =>
+      mounted &&
+      widget.canInteract() &&
+      ModalRoute.of(context)?.isCurrent == true;
 
   @override
   void initState() {
@@ -70,7 +75,7 @@ class _NotificationPreviewMenuState extends State<NotificationPreviewMenu> {
   }
 
   Future<void> _markAllRead() async {
-    if (_updating) return;
+    if (_updating || !_isActive) return;
     setState(() {
       _updating = true;
       _actionError = null;
@@ -92,7 +97,7 @@ class _NotificationPreviewMenuState extends State<NotificationPreviewMenu> {
   }
 
   Future<void> _open(AppNotification notification) async {
-    if (_updating) return;
+    if (_updating || !_isActive) return;
     if (!notification.isRead) {
       setState(() {
         _updating = true;
