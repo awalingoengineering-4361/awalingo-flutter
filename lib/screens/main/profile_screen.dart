@@ -912,7 +912,7 @@ class _StatsGrid extends StatelessWidget {
                 child: _StatItem(
                   iconAsset: 'assets/profile/streak-level.svg',
                   label: 'Level',
-                  value: levelName ?? 'Not started',
+                  value: levelName ?? 'JJC',
                   c: c,
                 ),
               ),
