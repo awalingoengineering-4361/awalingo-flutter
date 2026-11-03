@@ -12,9 +12,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class _SignedInAuth extends AuthNotifier {
+  String owner = 'bell-user';
+  void switchOwner(String next) {
+    owner = next;
+    notifyListeners();
+  }
+
   @override
   User get user => User(
-    id: 'bell-user',
+    id: owner,
     appMetadata: const {},
     userMetadata: const {},
     aud: 'authenticated',
@@ -271,6 +277,28 @@ void notificationBellTests({
     },
   );
 
+  for (final link in ['/notifications', null, '/contributor']) {
+    testWidgets('bell notification $link opens complete item and can reopen', (
+      tester,
+    ) async {
+      notifications.single['link'] = link;
+      await mount(tester);
+      for (var attempt = 0; attempt < 2; attempt++) {
+        await tester.tap(find.byIcon(Icons.notifications_outlined));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Welcome to Awalingo'));
+        await tester.pumpAndSettle();
+        expect(find.text('Notification'), findsOneWidget);
+        expect(find.text('Your community has news.'), findsOneWidget);
+        expect(writes, hasLength(1));
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+      }
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
   testWidgets('view all opens the full list and can return to the bell', (
     tester,
   ) async {
@@ -307,6 +335,27 @@ void notificationBellTests({
     expect(find.text('Latest community news'), findsOneWidget);
     expect(find.text('No notifications'), findsNothing);
     expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('account switch away and back cancels a pending bell item open', (
+    tester,
+  ) async {
+    notifications.single['link'] = '/profile';
+    await mount(tester);
+    pendingWrite = Completer<void>();
+    await tester.tap(find.byIcon(Icons.notifications_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Welcome to Awalingo'));
+    await tester.pump();
+    auth.switchOwner('another-user');
+    await tester.pumpAndSettle();
+    auth.switchOwner('bell-user');
+    await tester.pumpAndSettle();
+    pendingWrite!.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Profile destination'), findsNothing);
+    expect(writes, hasLength(1));
     await tester.pumpWidget(const SizedBox());
   });
 

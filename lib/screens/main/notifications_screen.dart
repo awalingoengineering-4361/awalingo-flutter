@@ -112,42 +112,93 @@ class NotificationsScreen extends StatefulWidget {
 class _NotificationsScreenState extends State<NotificationsScreen> {
   final _service = NotificationService();
   bool _loading = true;
+  bool _opening = false;
+  bool _initialized = false;
+  int _sessionVersion = 0;
+  int _loadVersion = 0;
   List<AppNotification> _items = [];
   String? _userId;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _userId = AuthProvider.of(context).user?.id;
-    if (_loading) _load();
+    final userId = AuthProvider.of(context).user?.id;
+    if (_initialized && userId == _userId) return;
+    _initialized = true;
+    _userId = userId;
+    _sessionVersion++;
+    _opening = false;
+    _items = [];
+    _loading = true;
+    _load();
   }
 
   Future<void> _load() async {
-    if (_userId == null) {
+    final userId = _userId;
+    final version = ++_loadVersion;
+    if (userId == null) {
       setState(() => _loading = false);
       return;
     }
     try {
-      final items = await _service.load(_userId!);
-      if (mounted)
+      final items = await _service.load(userId);
+      if (mounted && version == _loadVersion && userId == _userId) {
         setState(() {
           _items = items;
           _loading = false;
         });
+      }
     } catch (e) {
       debugPrint('Notifications load: $e');
-      if (mounted) setState(() => _loading = false);
+      if (mounted && version == _loadVersion && userId == _userId) {
+        setState(() => _loading = false);
+      }
     }
   }
 
-  Future<void> _markRead(int id) async {
-    if (_userId == null) return;
-    setState(() {
-      _items = _items
-          .map((n) => n.id == id ? n.copyWith(isRead: true) : n)
-          .toList();
-    });
-    await _service.markRead(_userId!, id);
+  Future<void> _open(AppNotification notification) async {
+    final userId = _userId;
+    final sessionVersion = _sessionVersion;
+    bool active() =>
+        mounted &&
+        sessionVersion == _sessionVersion &&
+        _items.any((item) => item.id == notification.id) &&
+        AuthProvider.of(context).user?.id == userId &&
+        ModalRoute.of(context)?.isCurrent == true;
+    if (_opening || userId == null || !active()) return;
+    _opening = true;
+    try {
+      if (!notification.isRead) {
+        await _service.markRead(userId, notification.id);
+        if (!active()) return;
+        setState(() {
+          _items = _items
+              .map(
+                (item) => item.id == notification.id
+                    ? item.copyWith(isRead: true)
+                    : item,
+              )
+              .toList();
+        });
+      }
+      if (!mounted || !active()) return;
+      await openAppNotification(
+        context,
+        userId,
+        notification,
+        canNavigate: active,
+      );
+    } catch (_) {
+      if (mounted && active()) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to open notification. Please retry.'),
+          ),
+        );
+      }
+    } finally {
+      if (sessionVersion == _sessionVersion) _opening = false;
+    }
   }
 
   Future<void> _markAllRead() async {
@@ -313,14 +364,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         itemBuilder: (_, i) => _NotificationTile(
                           notification: _items[i],
                           c: c,
-                          onTap: () {
-                            _markRead(_items[i].id);
-                            openNotificationLink(
-                              context,
-                              _userId,
-                              _items[i].link,
-                            );
-                          },
+                          onTap: () => _open(_items[i]),
                           onDelete: () => _delete(_items[i].id),
                         ),
                       ),
