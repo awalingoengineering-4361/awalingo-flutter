@@ -67,3 +67,15 @@ The final checks target a dedicated emulator serial (emulator-5580). The private
 ADB selector filters the real device inventory to that serial and delegates all
 commands to the installed ADB; it does not fabricate results. Existing emulator
 installations and application data were preserved.
+
+## Installable artifact
+
+Built the normal `lib/main.dart` ARM64 release APK using
+`--dart-define-from-file=config/production.json`. The selected Supabase, website
+and push origins were checked against the production configuration. This exact
+APK installed and cold-launched successfully on emulator-5580; its normal
+onboarding screenshot was inspected. It contains no fixture entry point.
+
+Artifact: `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`.
+SHA-256: `11d741aa909c7313f1671ada42a89c18f15fa4acad57bad0a38a2b47dde785f1`.
+This is a production-configured build; building it does not publish a store release.
