@@ -6,6 +6,7 @@ import '../../features/awaquiz/awaquiz_progression.dart';
 import '../../features/streaks/streak_repository.dart';
 import '../../services/certificate_export_service.dart';
 import '../../widgets/certificate_actions.dart';
+import '../../widgets/awaquiz_certificate_card.dart';
 import '../../services/load_failure.dart';
 import '../../widgets/load_failure_view.dart';
 import '../../widgets/app_buttons.dart';
@@ -410,7 +411,8 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
     try {
       final userId = AuthProvider.of(context).user?.id;
       if (userId == null) {
-        if (mounted && generation == _loadGeneration) setState(() => _loading = false);
+        if (mounted && generation == _loadGeneration)
+          setState(() => _loading = false);
         return;
       }
 
@@ -586,7 +588,9 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
             )
           : _error != null
           ? LoadFailureView(
-              failure: LoadFailure.fromError(_error!), onRetry: _load)
+              failure: LoadFailure.fromError(_error!),
+              onRetry: _load,
+            )
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView(
@@ -1885,7 +1889,6 @@ class _ResultScreenState extends State<_ResultScreen> {
   bool _showMissed = false;
   bool _reviewUnlocked = false;
 
-
   int get _pct =>
       widget.total > 0 ? ((widget.score / widget.total) * 100).round() : 0;
   bool get _isPerfect => widget.score == widget.total && widget.total > 0;
@@ -2219,17 +2222,21 @@ class _ResultScreenState extends State<_ResultScreen> {
                   ),
                   child: Column(
                     children: [
-                      _CertificateCard(
+                      AwaQuizCertificateCard(
                         recipientName: _certificateName,
                         language: widget.communityName,
-                        levelLabel: widget.level.difficulty.label,
+                        levelLabel: certificateStageLabelForSection(
+                          widget.level.section,
+                        ),
                       ),
                       const SizedBox(height: 20),
                       CertificateActions(
                         certificate: CertificateDetails(
                           recipientName: _certificateName,
                           language: widget.communityName,
-                          levelLabel: widget.level.difficulty.label,
+                          levelLabel: certificateStageLabelForSection(
+                            widget.level.section,
+                          ),
                         ),
                       ),
                     ],
@@ -2354,312 +2361,6 @@ class _ResultScreenState extends State<_ResultScreen> {
       ),
     );
   }
-}
-
-// Mirrors the earnedCertificate preview card (result/page.tsx:214-284) —
-// an A4-ratio (1.414) card with layered navy/gold corner ribbons, dotted
-// corner accents, a black logo panel, and a gold trophy seal. Always
-// light-themed regardless of app theme, matching the web exactly.
-class _CertificateCard extends StatelessWidget {
-  final String recipientName;
-  final String language;
-  final String levelLabel;
-  const _CertificateCard({
-    required this.recipientName,
-    required this.language,
-    required this.levelLabel,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: AspectRatio(
-        aspectRatio: 1.414,
-        child: ColoredBox(
-          color: Colors.white,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final w = constraints.maxWidth;
-              final h = constraints.maxHeight;
-              double clampFont(double minPx, double pctOfWidth, double maxPx) =>
-                  (w * pctOfWidth / 100).clamp(minPx, maxPx);
-
-              return Stack(
-                children: [
-                  Positioned(
-                    left: w * 0.13,
-                    top: 0,
-                    width: w * 0.18,
-                    height: h * 0.25,
-                    child: CustomPaint(painter: _DotGridPainter()),
-                  ),
-                  Positioned(
-                    right: w * 0.13,
-                    bottom: 0,
-                    width: w * 0.18,
-                    height: h * 0.25,
-                    child: CustomPaint(painter: _DotGridPainter()),
-                  ),
-                  Positioned.fill(
-                    child: CustomPaint(painter: _CornerRibbonPainter()),
-                  ),
-
-                  Positioned(
-                    left: w * 0.5 - w * 0.14,
-                    top: 0,
-                    width: w * 0.28,
-                    height: h * 0.15,
-                    child: Container(
-                      padding: EdgeInsets.symmetric(horizontal: w * 0.02),
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF08080A),
-                        borderRadius: BorderRadius.vertical(
-                          bottom: Radius.circular(24),
-                        ),
-                      ),
-                      child: Center(
-                        child: Image.asset(
-                          'assets/branding/logo-wordmark-dark.png',
-                          fit: BoxFit.contain,
-                          errorBuilder: (_, __, ___) => const Text(
-                            'AWALINGO',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  Positioned(
-                    left: w * 0.10,
-                    right: w * 0.10,
-                    top: h * 0.22,
-                    child: Text(
-                      'CERTIFICATE',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontFamily: 'Metropolis',
-                        fontSize: clampFont(16.8, 7.5, 48),
-                        color: const Color(0xFF272320),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    left: w * 0.10,
-                    right: w * 0.10,
-                    top: h * 0.33,
-                    child: Text(
-                      'OF ACHIEVEMENT',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontFamily: 'Metropolis',
-                        fontSize: clampFont(8, 3, 20.8),
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 1,
-                        color: const Color(0xFFAE7014),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    left: w * 0.10,
-                    right: w * 0.10,
-                    top: h * 0.41,
-                    child: Text(
-                      'This is to certify that',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontFamily: 'Metropolis',
-                        fontSize: clampFont(8, 2.4, 16.8),
-                        color: Colors.black,
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    left: w * 0.14,
-                    right: w * 0.14,
-                    top: h * 0.50,
-                    child: Text(
-                      recipientName,
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: 'Metropolis',
-                        fontSize: clampFont(12, 5.5, 40),
-                        color: Colors.black,
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    left: w * 0.16,
-                    right: w * 0.16,
-                    top: h * 0.59,
-                    child: Container(height: 1, color: const Color(0xFFAE7014)),
-                  ),
-                  Positioned(
-                    left: w * 0.13,
-                    right: w * 0.13,
-                    top: h * 0.63,
-                    child: RichText(
-                      textAlign: TextAlign.center,
-                      text: TextSpan(
-                        style: TextStyle(
-                          fontSize: clampFont(6.4, 2.3, 16),
-                          color: Colors.black,
-                          fontFamily: 'Metropolis',
-                        ),
-                        children: [
-                          const TextSpan(
-                            text: 'Has aced the Awalingo Language Quiz for ',
-                          ),
-                          TextSpan(
-                            text: '$language, ',
-                            style: const TextStyle(color: Color(0xFFC4007E)),
-                          ),
-                          TextSpan(
-                            text: levelLabel,
-                            style: const TextStyle(color: Color(0xFFD69718)),
-                          ),
-                          const TextSpan(text: ' Level.'),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    left: w * 0.13,
-                    right: w * 0.13,
-                    top: h * 0.71,
-                    child: Text(
-                      'Please put some respect on their name!',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontFamily: 'Metropolis',
-                        fontSize: clampFont(6.4, 2.3, 16),
-                        color: Colors.black,
-                      ),
-                    ),
-                  ),
-
-                  Positioned(
-                    left: w * 0.05,
-                    bottom: h * 0.04,
-                    width: w * 0.12,
-                    height: w * 0.12,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: const Color(0xFFD69718),
-                        border: Border.all(
-                          color: const Color(0xFFF7C74C),
-                          width: (w * 0.012).clamp(4, 8),
-                        ),
-                      ),
-                      child: Icon(
-                        Icons.emoji_events,
-                        color: const Color(0xFFF7C74C),
-                        size: w * 0.06,
-                      ),
-                    ),
-                  ),
-
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: h * 0.05,
-                    child: Column(
-                      children: [
-                        Text(
-                          'Signed:',
-                          style: TextStyle(
-                            fontFamily: 'Metropolis',
-                            fontSize: clampFont(6.4, 2.3, 16),
-                            fontStyle: FontStyle.italic,
-                            color: Colors.black,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'The Ancestors',
-                          style: TextStyle(
-                            fontFamily: 'Metropolis',
-                            fontSize: clampFont(7.2, 2.8, 19.2),
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// Matches the dotted-accent corners (radial-gradient dot pattern, 12px grid).
-class _DotGridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = const Color(0xFFD7D1C7);
-    for (double y = 6; y < size.height; y += 12) {
-      for (double x = 6; x < size.width; x += 12) {
-        canvas.drawCircle(Offset(x, y), 1.2, paint);
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-// Matches the nested navy/gold corner-ribbon triangles (top-left and
-// bottom-right), each a percentage of the card's own size, painted
-// largest-to-smallest to match the web's DOM stacking order.
-class _CornerRibbonPainter extends CustomPainter {
-  static const _layers = [
-    (0.38, Color(0xFF0C142F)),
-    (0.34, Color(0xFF23305E)),
-    (0.29, Color(0xFFD69718)),
-    (0.27, Color(0xFF141F46)),
-    (0.19, Color(0xFF0C142F)),
-  ];
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    for (final (fraction, color) in _layers) {
-      final paint = Paint()..color = color;
-      final w = size.width * fraction;
-      final h = size.height * fraction;
-
-      canvas.drawPath(
-        Path()
-          ..moveTo(0, 0)
-          ..lineTo(w, 0)
-          ..lineTo(0, h)
-          ..close(),
-        paint,
-      );
-      canvas.drawPath(
-        Path()
-          ..moveTo(size.width, size.height)
-          ..lineTo(size.width - w, size.height)
-          ..lineTo(size.width, size.height - h)
-          ..close(),
-        paint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _ReviewRow extends StatelessWidget {

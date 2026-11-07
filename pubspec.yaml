@@ -56,8 +56,26 @@ flutter:
     - assets/streaks/
     - assets/profile/
     - assets/neo-types/
+    - assets/certificate/
 
   fonts:
+    - family: CertificateMontserrat
+      fonts:
+        - asset: assets/certificate/Montserrat-Regular.ttf
+        - asset: assets/certificate/Montserrat-Medium.ttf
+          weight: 500
+    - family: CertificateInter
+      fonts:
+        - asset: assets/certificate/Inter-Regular.ttf
+    - family: CertificateAlbertSans
+      fonts:
+        - asset: assets/certificate/AlbertSans-Regular.ttf
+        - asset: assets/certificate/AlbertSans-Medium.ttf
+          weight: 500
+        - asset: assets/certificate/AlbertSans-SemiBold.ttf
+          weight: 600
+        - asset: assets/certificate/AlbertSans-Italic.ttf
+          style: italic
     - family: Parkinsans
       fonts:
         - asset: assets/fonts/Parkinsans-Regular.ttf
