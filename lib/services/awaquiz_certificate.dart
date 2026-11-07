@@ -30,6 +30,7 @@ Future<Uint8List> buildAwaQuizCertificatePdf({
     pw.Font face,
     double size, {
     PdfColor color = const PdfColor.fromInt(0x020202),
+    double spacing = 0,
   }) => pw.Text(
     text,
     textAlign: pw.TextAlign.center,
@@ -38,6 +39,7 @@ Future<Uint8List> buildAwaQuizCertificatePdf({
       fontFallback: [fallback],
       fontSize: size,
       color: color,
+      letterSpacing: spacing,
     ),
   );
   pw.Widget box(
@@ -45,14 +47,15 @@ Future<Uint8List> buildAwaQuizCertificatePdf({
     double y,
     double width,
     double height,
-    pw.Widget child,
-  ) => pw.Positioned(
+    pw.Widget child, {
+    pw.Alignment alignment = pw.Alignment.topCenter,
+  }) => pw.Positioned(
     left: x,
     top: y,
     child: pw.SizedBox(
       width: width,
       height: height,
-      child: pw.Align(alignment: pw.Alignment.topCenter, child: child),
+      child: pw.Align(alignment: alignment, child: child),
     ),
   );
   doc.addPage(
@@ -91,7 +94,12 @@ Future<Uint8List> buildAwaQuizCertificatePdf({
             234.74414,
             671,
             20,
-            line(certificateIntroduction, introduction, 15.683),
+            line(
+              certificateIntroduction,
+              introduction,
+              15.683,
+              spacing: 0.1568,
+            ),
           ),
           box(
             161,
@@ -100,8 +108,9 @@ Future<Uint8List> buildAwaQuizCertificatePdf({
             49,
             pw.FittedBox(
               fit: pw.BoxFit.scaleDown,
-              child: line(recipientName, name, 40),
+              child: line(recipientName, name, 40, spacing: 0.4),
             ),
+            alignment: pw.Alignment.center,
           ),
           box(
             118,

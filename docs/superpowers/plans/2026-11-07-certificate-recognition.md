@@ -66,12 +66,12 @@
 - Preserve synchronous createAwaQuizCertificate(options) -> jsPDF; extend its options with prepared artwork/font resources.
 - A cached async resource loader prepares those inputs for the download action, evicting failed loads so retry works.
 
-- [ ] Add failing coverage for recognition copy, Unicode/long values, stage wording, changed details on repeated download, and retry after resource failure.
-- [ ] Install the same exact local artwork/fonts as Flutter and implement the reusable preview with responsive scaling.
-- [ ] Update jsPDF composition, font embedding and download resource loading. Surface retryable failure in the result page.
-- [ ] Run targeted Vitest tests, npm run lint:sonar, npm run type-check and production build; investigate touched-file findings.
-- [ ] Render the actual result component in a browser with deterministic certificate fixtures at desktop/mobile widths and both themes. Download and render the PDF to compare with Figma and Flutter's exported artifacts.
-- [ ] Record validation and commit only the Next.js certificate change.
+- [x] Add failing coverage for recognition copy, Unicode/long values, stage wording, changed details on repeated download, and retry after resource failure.
+- [x] Install the same exact local artwork/fonts as Flutter and implement the reusable preview with responsive scaling.
+- [x] Update jsPDF composition, font embedding and download resource loading. Surface retryable failure in the result page.
+- [x] Run targeted Vitest tests, npm run lint:sonar, npm run type-check and production build; investigate touched-file findings.
+- [x] Render the actual result component in a browser with deterministic certificate fixtures at desktop/mobile widths and both themes. Download and render the PDF to compare with Figma and Flutter's exported artifacts.
+- [x] Record validation and commit only the Next.js certificate change.
 
 ### Final validation
 

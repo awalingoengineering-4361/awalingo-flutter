@@ -23,6 +23,8 @@ class AwaQuizCertificateCard extends StatelessWidget {
       Color color = const Color(0xFF020202),
       FontWeight weight = FontWeight.w400,
       FontStyle style = FontStyle.normal,
+      double spacing = 0,
+      double height = 1.25,
     }) => Text(
       text,
       textAlign: TextAlign.center,
@@ -33,7 +35,8 @@ class AwaQuizCertificateCard extends StatelessWidget {
         fontWeight: weight,
         fontStyle: style,
         color: color,
-        height: 1.25,
+        height: height,
+        letterSpacing: spacing,
         decoration: TextDecoration.none,
       ),
     );
@@ -68,6 +71,7 @@ class AwaQuizCertificateCard extends StatelessWidget {
                       48,
                       'Parkinsans',
                       color: const Color(0xFF2B2621),
+                      height: 63.7435 / 48,
                     ),
                   ),
                   Positioned(
@@ -92,6 +96,8 @@ class AwaQuizCertificateCard extends StatelessWidget {
                       15.683,
                       'CertificateMontserrat',
                       weight: FontWeight.w500,
+                      spacing: 0.1568,
+                      height: 19 / 15.683,
                     ),
                   ),
                   Positioned(
@@ -101,7 +107,13 @@ class AwaQuizCertificateCard extends StatelessWidget {
                     height: 49,
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
-                      child: line(recipientName, 40, 'CertificateMontserrat'),
+                      child: line(
+                        recipientName,
+                        40,
+                        'CertificateMontserrat',
+                        spacing: 0.4,
+                        height: 1.225,
+                      ),
                     ),
                   ),
                   Positioned(
