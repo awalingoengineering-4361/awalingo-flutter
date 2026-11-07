@@ -259,7 +259,7 @@ class _ProfileScreenState extends State<ProfileScreen> with RouteAware {
   Future<void> _showTopUpModal() async {
     final result = await showDialog<CowryCheckoutResult>(
       context: context,
-      builder: (_) => const TopUpCowriesModal(returnTo: 'profile'),
+      builder: (_) => TopUpCowriesModal(returnTo: 'profile'),
     );
     if (!mounted) return;
     switch (result) {
@@ -290,6 +290,14 @@ class _ProfileScreenState extends State<ProfileScreen> with RouteAware {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Payment returned without enough details to confirm it.', style: TextStyle(fontFamily: 'Metropolis')),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        break;
+      case CowryCheckoutResult.pending:
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Payment is processing. Your cowries will be added once it completes.', style: TextStyle(fontFamily: 'Metropolis')),
             behavior: SnackBarBehavior.floating,
           ),
         );

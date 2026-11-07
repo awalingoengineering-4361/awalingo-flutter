@@ -6,7 +6,9 @@ import '../theme/app_theme.dart';
 /// Outcome of a checkout session, parsed from the `payment` query param the
 /// cowry-payment-callback Edge Function redirects to on completion
 /// (supabase/functions/cowry-payment-callback: `.../complete?payment=...`).
-enum CowryCheckoutResult { success, failed, missing, cancelled }
+/// `pending` only comes from App Store / Google Play purchases that the
+/// store or server hasn't settled yet (StorePurchaseService).
+enum CowryCheckoutResult { success, failed, missing, cancelled, pending }
 
 /// Hosts the payment provider's checkout page in an in-app WebView instead of
 /// handing off to the system browser, so completing a top-up doesn't leave

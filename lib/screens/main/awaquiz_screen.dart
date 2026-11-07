@@ -484,7 +484,7 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
   Future<void> _showTopUpModal() async {
     final result = await showDialog<CowryCheckoutResult>(
       context: context,
-      builder: (_) => const TopUpCowriesModal(returnTo: 'awaquiz'),
+      builder: (_) => TopUpCowriesModal(returnTo: 'awaquiz'),
     );
     if (!mounted) return;
     if (result == CowryCheckoutResult.success) {
@@ -499,6 +499,14 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
     } else if (result == CowryCheckoutResult.failed) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Payment failed. Please try again.')),
+      );
+    } else if (result == CowryCheckoutResult.pending) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Payment is processing. Your cowries will be added once it completes.',
+          ),
+        ),
       );
     }
   }
@@ -634,7 +642,7 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          'Pick a level, answer a fresh set of questions, and see how far your community language skills can go.',
+                          'Take a quick quiz, refresh your knowledge and prove your language level',
                           style: TextStyle(
                             fontFamily: 'Metropolis',
                             fontSize: 13,
