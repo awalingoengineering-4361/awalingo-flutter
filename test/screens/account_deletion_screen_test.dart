@@ -120,6 +120,8 @@ void accountDeletionScreenTests({
     await tester.pumpAndSettle();
     expect(find.textContaining('Please retry'), findsOneWidget);
     if (capture != null) await capture(tester, 'account-deletion-retry');
+    await tester.ensureVisible(find.byKey(const Key('request-deletion')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('request-deletion')));
     await tester.pumpAndSettle();
     expect(attempts, 2);
