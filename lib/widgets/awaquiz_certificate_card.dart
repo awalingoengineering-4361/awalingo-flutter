@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/certificate_design.dart';
+import '../services/certificate_fonts.dart';
 
 /// A fixed print composition scaled as a whole to fit the available width.
 class AwaQuizCertificateCard extends StatelessWidget {
@@ -30,13 +31,18 @@ class AwaQuizCertificateCard extends StatelessWidget {
       textAlign: TextAlign.center,
       style: TextStyle(
         fontFamily: family,
-        fontFamilyFallback: const ['NotoSans'],
+        fontFamilyFallback: const [
+          'NotoSans',
+          'CertificateArabic',
+          'CertificateEthiopic',
+          'CertificateCJK',
+        ],
         fontSize: size,
         fontWeight: weight,
         fontStyle: style,
         color: color,
         height: height,
-        letterSpacing: spacing,
+        letterSpacing: certificateArabicPattern.hasMatch(text) ? 0 : spacing,
         decoration: TextDecoration.none,
       ),
     );
@@ -131,7 +137,12 @@ class AwaQuizCertificateCard extends StatelessWidget {
                           text: TextSpan(
                             style: const TextStyle(
                               fontFamily: 'CertificateAlbertSans',
-                              fontFamilyFallback: ['NotoSans'],
+                              fontFamilyFallback: [
+                                'NotoSans',
+                                'CertificateArabic',
+                                'CertificateEthiopic',
+                                'CertificateCJK',
+                              ],
                               fontSize: 18,
                               height: 1.25,
                               color: Color(0xFF020202),

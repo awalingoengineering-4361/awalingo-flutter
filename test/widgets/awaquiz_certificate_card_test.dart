@@ -1,3 +1,5 @@
+import 'package:awalingo/services/certificate_fonts.dart';
+import 'package:awalingo/services/awaquiz_certificate.dart';
 import 'package:awalingo/widgets/awaquiz_certificate_card.dart';
 import 'package:awalingo/features/awaquiz/awaquiz_progression.dart';
 import 'package:flutter/material.dart';
@@ -19,6 +21,29 @@ void main() {
         ],
       );
       expect(certificateStageLabelForSection(0), 'AwaQuiz');
+    },
+  );
+  test('selects script fonts for mixed Arabic, Ethiopic and CJK details', () {
+    expect(
+      requiredCertificateFallbackAssets('Amina أمينة 李明 አማርኛ العربية 中文'),
+      [
+        'assets/certificate/Amiri-Regular.ttf',
+        'assets/certificate/NotoSansEthiopic-Regular.ttf',
+        'assets/certificate/NotoSansCJK-Regular.ttf',
+      ],
+    );
+  });
+  test(
+    'unsupported characters cannot produce a silently incomplete PDF',
+    () async {
+      await expectLater(
+        buildAwaQuizCertificatePdf(
+          language: 'Yorùbá',
+          levelLabel: 'JJC (A1 Level)',
+          recipientName: 'Awa \uE000',
+        ),
+        throwsFormatException,
+      );
     },
   );
   testWidgets(

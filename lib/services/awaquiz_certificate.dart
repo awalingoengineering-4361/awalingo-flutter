@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'certificate_design.dart';
+import 'certificate_fonts.dart';
 
 Future<Uint8List> buildAwaQuizCertificatePdf({
   required String language,
@@ -22,6 +23,13 @@ Future<Uint8List> buildAwaQuizCertificatePdf({
   final semibold = await font('assets/certificate/AlbertSans-SemiBold.ttf');
   final italic = await font('assets/certificate/AlbertSans-Italic.ttf');
   final fallback = await font('assets/fonts/NotoSans-Regular.ttf');
+  final additional = <pw.Font>[];
+  for (final path in requiredCertificateFallbackAssets(
+    '$recipientName\n$language\n$levelLabel',
+  )) {
+    additional.add(await font(path));
+  }
+  final fallbacks = [fallback, ...additional];
   final artwork = await rootBundle.load('assets/certificate/artwork.png');
   final image = pw.MemoryImage(artwork.buffer.asUint8List());
   final doc = pw.Document();
@@ -32,14 +40,14 @@ Future<Uint8List> buildAwaQuizCertificatePdf({
     PdfColor color = const PdfColor.fromInt(0x020202),
     double spacing = 0,
   }) => pw.Text(
-    text,
+    certificatePdfArabic(text),
     textAlign: pw.TextAlign.center,
     style: pw.TextStyle(
       font: face,
-      fontFallback: [fallback],
+      fontFallback: fallbacks,
       fontSize: size,
       color: color,
-      letterSpacing: spacing,
+      letterSpacing: certificateArabicPattern.hasMatch(text) ? 0 : spacing,
     ),
   );
   pw.Widget box(
@@ -62,102 +70,129 @@ Future<Uint8List> buildAwaQuizCertificatePdf({
     pw.Page(
       pageFormat: const PdfPageFormat(certificateWidth, certificateHeight),
       margin: pw.EdgeInsets.zero,
-      build: (_) => pw.Stack(
-        children: [
-          pw.Positioned.fill(child: pw.Image(image, fit: pw.BoxFit.fill)),
-          box(
-            90,
-            133,
-            671,
-            63.7435,
-            line(
-              certificateHeading,
-              title,
-              48,
-              color: const PdfColor.fromInt(0x2B2621),
+      build: (context) {
+        void validate(String text, pw.Font primary) {
+          final candidates = [
+            primary,
+            ...fallbacks,
+          ].map((font) => font.getFont(context)).toList();
+          for (final rune in text.runes) {
+            if (RegExp(
+              r'[\s\u200c-\u200f\u202a-\u202e\u2066-\u2069]',
+            ).hasMatch(String.fromCharCode(rune))) {
+              continue;
+            }
+            if (!candidates.any((font) => font.isRuneSupported(rune))) {
+              throw const UnsupportedCertificateCharacters();
+            }
+          }
+        }
+
+        validate(recipientName, name);
+        validate('$language\n$levelLabel', body);
+        return pw.Stack(
+          children: [
+            pw.Positioned.fill(child: pw.Image(image, fit: pw.BoxFit.fill)),
+            box(
+              90,
+              133,
+              671,
+              63.7435,
+              line(
+                certificateHeading,
+                title,
+                48,
+                color: const PdfColor.fromInt(0x2B2621),
+              ),
             ),
-          ),
-          box(
-            90,
-            199.74414,
-            671,
-            28,
-            line(
-              certificateSubtitle,
-              subtitle,
-              22.329,
-              color: const PdfColor.fromInt(0xB1752E),
+            box(
+              90,
+              199.74414,
+              671,
+              28,
+              line(
+                certificateSubtitle,
+                subtitle,
+                22.329,
+                color: const PdfColor.fromInt(0xB1752E),
+              ),
             ),
-          ),
-          box(
-            90,
-            234.74414,
-            671,
-            20,
-            line(
-              certificateIntroduction,
-              introduction,
-              15.683,
-              spacing: 0.1568,
+            box(
+              90,
+              234.74414,
+              671,
+              20,
+              line(
+                certificateIntroduction,
+                introduction,
+                15.683,
+                spacing: 0.1568,
+              ),
             ),
-          ),
-          box(
-            161,
-            281.74414,
-            529,
-            49,
-            pw.FittedBox(
-              fit: pw.BoxFit.scaleDown,
-              child: line(recipientName, name, 40, spacing: 0.4),
+            box(
+              161,
+              281.74414,
+              529,
+              49,
+              pw.FittedBox(
+                fit: pw.BoxFit.scaleDown,
+                child: line(recipientName, name, 40, spacing: 0.4),
+              ),
+              alignment: pw.Alignment.center,
             ),
-            alignment: pw.Alignment.center,
-          ),
-          box(
-            118,
-            345.72461,
-            615,
-            46,
-            pw.FittedBox(
-              fit: pw.BoxFit.scaleDown,
-              alignment: pw.Alignment.topCenter,
-              child: pw.SizedBox(
-                width: 615,
-                child: pw.RichText(
-                  textAlign: pw.TextAlign.center,
-                  text: pw.TextSpan(
-                    style: pw.TextStyle(
-                      font: body,
-                      fontFallback: [fallback],
-                      fontSize: 18,
-                      color: const PdfColor.fromInt(0x020202),
+            box(
+              118,
+              345.72461,
+              615,
+              46,
+              pw.FittedBox(
+                fit: pw.BoxFit.scaleDown,
+                alignment: pw.Alignment.topCenter,
+                child: pw.SizedBox(
+                  width: 615,
+                  child: pw.RichText(
+                    textAlign: pw.TextAlign.center,
+                    text: pw.TextSpan(
+                      style: pw.TextStyle(
+                        font: body,
+                        fontFallback: fallbacks,
+                        fontSize: 18,
+                        color: const PdfColor.fromInt(0x020202),
+                      ),
+                      children: [
+                        const pw.TextSpan(text: certificateAchievement),
+                        pw.TextSpan(
+                          text: certificatePdfArabic(language),
+                          style: const pw.TextStyle(
+                            color: PdfColor.fromInt(0xBE008B),
+                          ),
+                        ),
+                        const pw.TextSpan(text: ', '),
+                        pw.TextSpan(
+                          text: certificatePdfArabic('- $levelLabel'),
+                          style: const pw.TextStyle(
+                            color: PdfColor.fromInt(0xDE9300),
+                          ),
+                        ),
+                        const pw.TextSpan(text: '. $certificateCommitment'),
+                      ],
                     ),
-                    children: [
-                      const pw.TextSpan(text: certificateAchievement),
-                      pw.TextSpan(
-                        text: language,
-                        style: const pw.TextStyle(
-                          color: PdfColor.fromInt(0xBE008B),
-                        ),
-                      ),
-                      const pw.TextSpan(text: ', '),
-                      pw.TextSpan(
-                        text: '- $levelLabel',
-                        style: const pw.TextStyle(
-                          color: PdfColor.fromInt(0xDE9300),
-                        ),
-                      ),
-                      const pw.TextSpan(text: '. $certificateCommitment'),
-                    ],
                   ),
                 ),
               ),
             ),
-          ),
-          box(118, 414.72461, 615, 23, line(certificateRespect, semibold, 18)),
-          box(118, 458.72461, 615, 20, line('Signed:', italic, 16)),
-          box(118, 485.72461, 615, 23, line('The Ancestors', medium, 18)),
-        ],
-      ),
+            box(
+              118,
+              414.72461,
+              615,
+              23,
+              line(certificateRespect, semibold, 18),
+            ),
+            box(118, 458.72461, 615, 20, line('Signed:', italic, 16)),
+            box(118, 485.72461, 615, 23, line('The Ancestors', medium, 18)),
+          ],
+        );
+      },
     ),
   );
   return doc.save();

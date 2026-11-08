@@ -7,7 +7,8 @@ specification; the recipient, language and completed stage remain live data.
 
 ## Layout and assets
 
-Use the 842.108 × 600.168 landscape canvas, clipped at its edges. Keep the
+Use the outer 841 × 595 landscape canvas, clipping the original
+842.108 × 600.168 inner content coordinates at its edges. Keep the
 certificate light-themed in either app theme. The white content panel is at
 (90,119), 671 × 402.724, with a 16px corner radius and 15% black 1px border.
 The black logo panel is centered at x=329, y=-47, 183.242 × 121.025.
@@ -55,3 +56,11 @@ sample name, accented language names, long names and every stage. Check narrow
 mobile widths and dark app themes. Repeat export actions with changed certificate
 data to catch stale recipient/language/stage state. Export failures must remain
 retryable. Run each repository's required checks before completion.
+
+## Final review corrections
+
+Match the source pattern orientation and outer-frame crop. Preserve Arabic,
+Ethiopic and BMP CJK names with licensed local script fonts; load these PDF
+fonts only when required. Unsupported glyphs must produce a clear export error
+instead of silently disappearing. Use grapheme-aware segmentation even when
+Intl.Segmenter is unavailable in an otherwise supported browser.

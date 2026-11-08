@@ -21,6 +21,7 @@ dependencies:
   http: ^1.2.0
   webview_flutter: ^4.10.0
   pdf: ^3.11.1
+  bidi: 2.0.13
   printing: ^5.13.2
   uuid: ^4.6.0
   flutter_timezone: ^3.0.1
@@ -59,6 +60,15 @@ flutter:
     - assets/certificate/
 
   fonts:
+    - family: CertificateArabic
+      fonts:
+        - asset: assets/certificate/Amiri-Regular.ttf
+    - family: CertificateEthiopic
+      fonts:
+        - asset: assets/certificate/NotoSansEthiopic-Regular.ttf
+    - family: CertificateCJK
+      fonts:
+        - asset: assets/certificate/NotoSansCJK-Regular.ttf
     - family: CertificateMontserrat
       fonts:
         - asset: assets/certificate/Montserrat-Regular.ttf

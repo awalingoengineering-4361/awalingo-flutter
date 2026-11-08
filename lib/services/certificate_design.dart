@@ -1,6 +1,6 @@
 // Coordinates and copy from Figma certificate 2481:3238.
-const certificateWidth = 842.108093;
-const certificateHeight = 600.168274;
+const certificateWidth = 841.0;
+const certificateHeight = 595.0;
 const certificateHeading = 'CERTIFICATE';
 const certificateSubtitle = 'OF RECOGNITION';
 const certificateIntroduction = 'This is to recognize that';

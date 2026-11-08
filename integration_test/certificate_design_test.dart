@@ -23,6 +23,11 @@ void main() {
           language: 'Èdè Yorùbá àti àṣà ìbílẹ̀',
           levelLabel: 'Ancestor (C1 Level)',
         ),
+        const CertificateDetails(
+          recipientName: 'Amina أمينة 李明 አማርኛ',
+          language: 'العربية 中文',
+          levelLabel: 'JJC (A1 Level)',
+        ),
       ];
       for (var index = 0; index < fixtures.length; index++) {
         final details = fixtures[index];

@@ -75,7 +75,7 @@
 
 ### Final validation
 
-- [ ] One fresh reviewer checks the complete changes across both repositories, focusing on the five cases above.
-- [ ] Resolve actionable findings and rerun the affected checks.
-- [ ] Confirm both primary checkouts' unrelated changes remain preserved.
-- [ ] Report artifacts, checks, limitations and both branches; open PRs when requested.
+- [x] One fresh reviewer checks the complete changes across both repositories, focusing on the five cases above.
+- [x] Resolve actionable findings and rerun the affected checks.
+- [x] Confirm both primary checkouts' unrelated changes remain preserved.
+- [x] Report artifacts, checks, limitations and both branches; open PRs when requested.

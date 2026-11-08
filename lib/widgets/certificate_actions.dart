@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/certificate_export_service.dart';
+import '../services/certificate_fonts.dart';
 import '../theme/app_theme.dart';
 
 enum _ExportAction { image, pdf }
@@ -49,17 +50,19 @@ class _CertificateActionsState extends State<CertificateActions> {
       } else {
         await exporter.sharePdf(details, bytes, bounds);
       }
-    } catch (_) {
+    } catch (error) {
+      final String message;
+      if (error is UnsupportedCertificateCharacters) {
+        message = error.message;
+      } else if (action == _ExportAction.image) {
+        message = 'Unable to share certificate. Please try again.';
+      } else {
+        message = 'Failed to generate certificate. Please try again.';
+      }
       if (mounted && _isCurrent(details)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              action == _ExportAction.image
-                  ? 'Unable to share certificate. Please try again.'
-                  : 'Failed to generate certificate. Please try again.',
-            ),
-          ),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
       }
     } finally {
       if (mounted) setState(() => _busy = null);

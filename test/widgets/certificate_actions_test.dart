@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:awalingo/services/certificate_export_service.dart';
+import 'package:awalingo/services/certificate_fonts.dart';
 import 'package:awalingo/widgets/certificate_actions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +18,7 @@ class FakeExporter extends CertificateExportService {
   int imageShares = 0;
   int pdfShares = 0;
   bool fail = false;
+  Object? renderError;
   bool failShare = false;
   Completer<Uint8List>? pending;
   Completer<void>? pendingShare;
@@ -26,6 +28,7 @@ class FakeExporter extends CertificateExportService {
   @override
   Future<Uint8List> createPdf(CertificateDetails details) async {
     pdfBuilds++;
+    if (renderError != null) throw renderError!;
     if (fail) throw StateError('private render failure');
     return Uint8List.fromList([1]);
   }
@@ -33,6 +36,7 @@ class FakeExporter extends CertificateExportService {
   @override
   Future<Uint8List> createImage(CertificateDetails details) async {
     imageBuilds++;
+    if (renderError != null) throw renderError!;
     if (fail) throw StateError('private render failure');
     return pending == null ? Uint8List.fromList([2]) : pending!.future;
   }
@@ -81,6 +85,24 @@ void certificateActionsTests() {
     await tester.pump();
   }
 
+  testWidgets(
+    'unsupported text explains the failure and does not open a share sheet',
+    (tester) async {
+      exporter.renderError = const UnsupportedCertificateCharacters();
+      await mount(tester);
+      await tester.tap(find.text('Share Certificate'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(const UnsupportedCertificateCharacters().message),
+        findsOneWidget,
+      );
+      expect(exporter.imageShares, 0);
+      exporter.renderError = null;
+      await tester.tap(find.text('Share Certificate'));
+      await tester.pumpAndSettle();
+      expect(exporter.imageShares, 1);
+    },
+  );
   testWidgets('same certificate can be shared twice after the chooser closes', (
     tester,
   ) async {
