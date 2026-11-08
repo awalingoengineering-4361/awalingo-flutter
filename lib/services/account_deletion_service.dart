@@ -54,9 +54,9 @@ class AccountDeletionService {
           return;
         }
       }
-      if (response.statusCode == 401 || response.statusCode == 403) {
+      if (response.statusCode == 401) {
         throw const AccountDeletionException(
-          'For your security, sign out and sign in again, then retry within ten minutes.',
+          'Your session is no longer valid. Sign in to delete your account.',
           needsSignIn: true,
         );
       }

@@ -75,4 +75,48 @@ void main() {
       expect(attempts, 2);
     },
   );
+  test(
+    'only expired or invalid authentication offers sign-in recovery',
+    () async {
+      final service = AccountDeletionService(
+        origin: 'https://www.awalingo.org',
+        accessToken: () => 'token',
+        client: MockClient(
+          (_) async => http.Response('{"error":"Invalid session"}', 401),
+        ),
+      );
+      await expectLater(
+        service.requestDeletion(),
+        throwsA(
+          isA<AccountDeletionException>().having(
+            (error) => error.needsSignIn,
+            'needsSignIn',
+            isTrue,
+          ),
+        ),
+      );
+    },
+  );
+  test(
+    'a non-authentication forbidden response does not send users into a sign-in loop',
+    () async {
+      final service = AccountDeletionService(
+        origin: 'https://www.awalingo.org',
+        accessToken: () => 'token',
+        client: MockClient(
+          (_) async => http.Response('{"error":"Request forbidden"}', 403),
+        ),
+      );
+      await expectLater(
+        service.requestDeletion(),
+        throwsA(
+          isA<AccountDeletionException>().having(
+            (error) => error.needsSignIn,
+            'needsSignIn',
+            isFalse,
+          ),
+        ),
+      );
+    },
+  );
 }
