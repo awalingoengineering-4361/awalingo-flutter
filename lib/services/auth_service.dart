@@ -4,6 +4,43 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class AuthService {
   final SupabaseClient _supabase = Supabase.instance.client;
 
+  Session? get currentSession => _supabase.auth.currentSession;
+
+  /// Validate against Auth, rather than trusting a locally cached user.
+  /// Network and service errors are deliberately not interpreted as deletion.
+  Future<({bool valid, String? accessToken})> validateSession() async {
+    var checkedToken = currentSession?.accessToken;
+    try {
+      var session = currentSession;
+      if (session == null) return (valid: false, accessToken: checkedToken);
+      if (session.isExpired) {
+        await _supabase.auth.refreshSession();
+        session = currentSession;
+        if (session == null) return (valid: false, accessToken: checkedToken);
+      }
+      checkedToken = session.accessToken;
+      final response = await _supabase.auth.getUser(checkedToken);
+      return (
+        valid: response.user?.id == session.user.id,
+        accessToken: checkedToken,
+      );
+    } on AuthException catch (error) {
+      if (error is! AuthRetryableFetchException &&
+          (error.statusCode == '401' ||
+              error.statusCode == '403' ||
+              {
+                'user_not_found',
+                'session_not_found',
+                'refresh_token_not_found',
+                'refresh_token_already_used',
+                'user_banned',
+              }.contains(error.code))) {
+        return (valid: false, accessToken: checkedToken);
+      }
+      rethrow;
+    }
+  }
+
   // Current session user
   User? get currentUser => _supabase.auth.currentUser;
   bool get isAuthenticated => currentUser != null;
@@ -104,7 +141,9 @@ class AuthService {
       return Exception('Password must be at least 6 characters.');
     }
     if (msg.contains('rate limit')) {
-      return Exception('Too many attempts. Please wait a moment and try again.');
+      return Exception(
+        'Too many attempts. Please wait a moment and try again.',
+      );
     }
     return Exception(message);
   }

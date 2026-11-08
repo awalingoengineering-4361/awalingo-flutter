@@ -49,6 +49,9 @@ class AuthNotifier extends ChangeNotifier {
   User? _user;
   bool _isLoading = true;
   String? _error;
+  bool _disposed = false;
+  Future<void>? _sessionCheck;
+  String? _sessionCheckToken;
 
   User? get user => _user;
   bool get isAuthenticated => _user != null;
@@ -65,20 +68,64 @@ class AuthNotifier extends ChangeNotifier {
     _isLoading = false;
 
     // Listen to auth state changes — mirrors onAuthStateChange in Next.js
-    _authSubscription = _service.authStateChanges.listen((state) {
-      final event = state.event;
-      if (event == AuthChangeEvent.signedIn ||
-          event == AuthChangeEvent.initialSession ||
-          event == AuthChangeEvent.tokenRefreshed) {
-        _user = state.session?.user;
-        if (_user != null) _syncProfileName(_user!);
-      } else if (event == AuthChangeEvent.signedOut) {
-        _user = null;
+    _authSubscription = _service.authStateChanges.listen(
+      (state) {
+        final event = state.event;
+        if (event == AuthChangeEvent.signedIn ||
+            event == AuthChangeEvent.initialSession ||
+            event == AuthChangeEvent.tokenRefreshed) {
+          _user = state.session?.user;
+          if (_user != null) _syncProfileName(_user!);
+        } else if (event == AuthChangeEvent.signedOut) {
+          // SDK storage cleanup can delay this event past a newer sign-in.
+          _user = _service.currentUser;
+        }
+        _isLoading = false;
+        _error = null;
+        notifyListeners();
+      },
+      onError: (Object _) {
+        unawaited(revalidateSession());
+      },
+    );
+  }
+
+  /// A remote deletion does not emit a local signed-out event on this device.
+  Future<void> revalidateSession() {
+    final session = _service.currentSession;
+    if (_disposed || session == null || _user == null) return Future.value();
+    final token = session.accessToken;
+    if (_sessionCheckToken == token && _sessionCheck != null) {
+      return _sessionCheck!;
+    }
+    _sessionCheckToken = token;
+    late final Future<void> checking;
+    checking = _checkSession(session.user.id, token).whenComplete(() {
+      if (identical(_sessionCheck, checking)) {
+        _sessionCheck = null;
+        _sessionCheckToken = null;
       }
-      _isLoading = false;
-      _error = null;
-      notifyListeners();
     });
+    _sessionCheck = checking;
+    return checking;
+  }
+
+  Future<void> _checkSession(String ownerId, String token) async {
+    ({bool valid, String? accessToken}) result;
+    try {
+      result = await _service.validateSession().timeout(
+        const Duration(seconds: 10),
+      );
+    } catch (_) {
+      return; // Offline and server failures preserve cached offline access.
+    }
+    if (_disposed ||
+        result.valid ||
+        _user?.id != ownerId ||
+        _service.currentSession?.accessToken != result.accessToken) {
+      return;
+    }
+    await logoutAfterDeletion(ownerId, expectedAccessToken: result.accessToken);
   }
 
   // ─── Login ────────────────────────────────────────────────────────────────
@@ -154,15 +201,22 @@ class AuthNotifier extends ChangeNotifier {
   }
 
   /// A durable deletion request must also clear this device when offline.
-  Future<void> logoutAfterDeletion(String ownerId) async {
-    if (_user?.id != ownerId) return;
+  Future<void> logoutAfterDeletion(
+    String ownerId, {
+    String? expectedAccessToken,
+  }) async {
+    if (_disposed || _user?.id != ownerId) return;
     try {
-      await beforeSignOut?.call();
+      await beforeSignOut?.call().timeout(const Duration(seconds: 5));
     } catch (_) {
       /* Server cleanup will remove registrations as well. */
     }
     final activeId = Supabase.instance.client.auth.currentUser?.id;
-    if (_user?.id != ownerId || (activeId != null && activeId != ownerId)) {
+    if (_disposed ||
+        _user?.id != ownerId ||
+        (expectedAccessToken != null &&
+            _service.currentSession?.accessToken != expectedAccessToken) ||
+        (activeId != null && activeId != ownerId)) {
       return;
     }
     try {
@@ -171,7 +225,9 @@ class AuthNotifier extends ChangeNotifier {
       /* Supabase clears the local session before its network call. */
     }
     final currentId = Supabase.instance.client.auth.currentUser?.id;
-    if (currentId != null && currentId != ownerId) return;
+    // Local signOut clears synchronously before its HTTP request. Any session
+    // present now belongs to a later sign-in, including the same account.
+    if (_disposed || currentId != null) return;
     _user = null;
     _error = null;
     _isLoading = false;
@@ -180,6 +236,7 @@ class AuthNotifier extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _authSubscription?.cancel();
     super.dispose();
   }
