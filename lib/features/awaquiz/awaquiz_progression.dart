@@ -15,14 +15,25 @@ extension AwaQuizDifficultyDetails on AwaQuizDifficulty {
 
   int get warningThreshold => this == AwaQuizDifficulty.advanced ? 5 : 10;
 
-  // Mirrors COMMUNITY_QUIZ_LEVEL_LABELS (neolingo: src/lib/community-quiz.ts)
-  // — the certificate's achievement line reads this difficulty label (e.g.
-  // "Beginner"), not the per-stage name (e.g. "JJC").
+  // Generic difficulty wording for quiz controls. Certificates use the
+  // completed-stage wording from certificateStageLabelForSection instead.
   String get label => switch (this) {
     AwaQuizDifficulty.beginner => 'Beginner',
     AwaQuizDifficulty.intermediate => 'Intermediate',
     AwaQuizDifficulty.advanced => 'Advanced',
   };
+}
+
+/// Complete certificate wording, matching the web's completed-stage labels.
+String certificateStageLabelForSection(int section) {
+  if (section < 1 || section > _stageDefinitions.length) return 'AwaQuiz';
+  final stage = _stageDefinitions[section - 1];
+  final cefr = switch (stage.difficulty) {
+    AwaQuizDifficulty.beginner => 'A1',
+    AwaQuizDifficulty.intermediate => 'B1',
+    AwaQuizDifficulty.advanced => 'C1',
+  };
+  return '${stage.name} ($cefr Level)';
 }
 
 class AwaQuizQuestionBank {

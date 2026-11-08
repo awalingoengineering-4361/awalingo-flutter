@@ -45,20 +45,10 @@ class CertificateExportService {
     : _share = share ?? SharePlus.instance.share;
 
   Future<Uint8List> createPdf(CertificateDetails details) async {
-    Uint8List? logoBytes;
-    try {
-      final logo = await rootBundle.load(
-        'assets/branding/logo-wordmark-dark.png',
-      );
-      logoBytes = logo.buffer.asUint8List();
-    } catch (_) {
-      // The existing certificate renderer also supports a text-only logo.
-    }
     return buildAwaQuizCertificatePdf(
       language: details.language,
       levelLabel: details.levelLabel,
       recipientName: details.recipientName,
-      logoBytes: logoBytes,
     );
   }
 
