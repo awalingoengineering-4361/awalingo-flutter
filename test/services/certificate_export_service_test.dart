@@ -7,7 +7,7 @@ import 'package:share_plus/share_plus.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   test(
-    'shares PNG bytes and current certificate caption together on repeated use',
+    'shares PNG alone so image destinations do not receive mixed image and text',
     () async {
       final payloads = <ShareParams>[];
       final exporter = CertificateExportService(
@@ -35,10 +35,7 @@ void main() {
         expect(p.files!.single.mimeType, 'image/png');
         expect(await p.files!.single.readAsBytes(), bytes);
         expect(p.fileNameOverrides!.single, endsWith('.png'));
-        expect(
-          p.text,
-          'I have just passed Awalingo Language Quiz for ${i == 0 ? 'Yoruba' : 'Igbo'}. Check out my certificate.',
-        );
+        expect(p.text, isNull);
         expect(p.sharePositionOrigin, const Rect.fromLTWH(10, 20, 100, 40));
       }
     },

@@ -67,22 +67,11 @@ class CertificateExportService {
       ShareParams(
         files: [XFile.fromData(bytes, mimeType: 'image/png')],
         fileNameOverrides: [details.filename('png')],
-        text: details.message,
+        // Some receiving apps reject mixed image/text shares. The caption
+        // remains available through the separate Copy message action.
         sharePositionOrigin: bounds,
       ),
     );
     // A chooser result cannot prove that a receiving app sent the content.
-  }
-
-  Future<void> sharePdf(
-    CertificateDetails details,
-    Uint8List bytes,
-    Rect bounds,
-  ) async {
-    await Printing.sharePdf(
-      bytes: bytes,
-      filename: details.filename('pdf'),
-      bounds: bounds,
-    );
   }
 }
