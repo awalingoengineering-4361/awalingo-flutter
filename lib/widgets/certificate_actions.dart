@@ -4,8 +4,6 @@ import '../services/certificate_export_service.dart';
 import '../services/certificate_fonts.dart';
 import '../theme/app_theme.dart';
 
-enum _ExportAction { image, pdf }
-
 class CertificateActions extends StatefulWidget {
   final CertificateDetails certificate;
   final CertificateExportService? exporter;
@@ -22,9 +20,8 @@ class CertificateActions extends StatefulWidget {
 
 class _CertificateActionsState extends State<CertificateActions> {
   final _imageKey = GlobalKey();
-  final _pdfKey = GlobalKey();
   late final _defaultExporter = CertificateExportService();
-  _ExportAction? _busy;
+  bool _busy = false;
 
   CertificateExportService get _exporter => widget.exporter ?? _defaultExporter;
   bool _isCurrent(CertificateDetails details) =>
@@ -32,32 +29,23 @@ class _CertificateActionsState extends State<CertificateActions> {
       widget.certificate == details &&
       ModalRoute.of(context)?.isCurrent != false;
 
-  Future<void> _export(_ExportAction action) async {
-    if (_busy != null) return;
+  Future<void> _share() async {
+    if (_busy) return;
     final details = widget.certificate;
     final exporter = _exporter;
-    setState(() => _busy = action);
+    setState(() => _busy = true);
     try {
-      final bytes = action == _ExportAction.image
-          ? await exporter.createImage(details)
-          : await exporter.createPdf(details);
+      final bytes = await exporter.createImage(details);
       if (!_isCurrent(details)) return;
-      final key = action == _ExportAction.image ? _imageKey : _pdfKey;
-      final box = key.currentContext!.findRenderObject() as RenderBox;
+      final box = _imageKey.currentContext!.findRenderObject() as RenderBox;
       final bounds = box.localToGlobal(Offset.zero) & box.size;
-      if (action == _ExportAction.image) {
-        await exporter.shareImage(details, bytes, bounds);
-      } else {
-        await exporter.sharePdf(details, bytes, bounds);
-      }
+      await exporter.shareImage(details, bytes, bounds);
     } catch (error) {
       final String message;
       if (error is UnsupportedCertificateCharacters) {
         message = error.message;
-      } else if (action == _ExportAction.image) {
-        message = 'Unable to share certificate. Please try again.';
       } else {
-        message = 'Failed to generate certificate. Please try again.';
+        message = 'Unable to share certificate. Please try again.';
       }
       if (mounted && _isCurrent(details)) {
         ScaffoldMessenger.of(
@@ -65,7 +53,7 @@ class _CertificateActionsState extends State<CertificateActions> {
         ).showSnackBar(SnackBar(content: Text(message)));
       }
     } finally {
-      if (mounted) setState(() => _busy = null);
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -80,13 +68,13 @@ class _CertificateActionsState extends State<CertificateActions> {
     }
   }
 
-  Widget _icon(_ExportAction action, IconData icon) => _busy == action
+  Widget _icon() => _busy
       ? const SizedBox(
           width: 14,
           height: 14,
           child: CircularProgressIndicator(strokeWidth: 2),
         )
-      : Icon(icon, size: 16);
+      : const Icon(Icons.share_outlined, size: 16);
 
   @override
   Widget build(BuildContext context) {
@@ -99,56 +87,19 @@ class _CertificateActionsState extends State<CertificateActions> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Wrap(
-          alignment: WrapAlignment.center,
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            ElevatedButton.icon(
-              key: _imageKey,
-              onPressed: _busy == null
-                  ? () => _export(_ExportAction.image)
-                  : null,
-              icon: _icon(_ExportAction.image, Icons.share_outlined),
-              label: Text(
-                _busy == _ExportAction.image
-                    ? 'Preparing...'
-                    : 'Share Certificate',
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: c.primary,
-                foregroundColor: c.primaryForeground,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
-                ),
-                shape: const StadiumBorder(),
-                elevation: 0,
-                textStyle: textStyle,
-              ),
-            ),
-            OutlinedButton.icon(
-              key: _pdfKey,
-              onPressed: _busy == null
-                  ? () => _export(_ExportAction.pdf)
-                  : null,
-              icon: _icon(_ExportAction.pdf, Icons.download_rounded),
-              label: Text(
-                _busy == _ExportAction.pdf
-                    ? 'Preparing...'
-                    : 'Download Certificate',
-              ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: c.primary,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
-                ),
-                shape: const StadiumBorder(),
-                textStyle: textStyle,
-              ),
-            ),
-          ],
+        ElevatedButton.icon(
+          key: _imageKey,
+          onPressed: _busy ? null : _share,
+          icon: _icon(),
+          label: Text(_busy ? 'Preparing...' : 'Share Certificate'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: c.primary,
+            foregroundColor: c.primaryForeground,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            shape: const StadiumBorder(),
+            elevation: 0,
+            textStyle: textStyle,
+          ),
         ),
         TextButton.icon(
           onPressed: _copyMessage,
