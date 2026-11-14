@@ -638,7 +638,7 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          'Pick a level, answer a fresh set of questions, and see how far your community language skills can go.',
+                          'Take a quick quiz, refresh your knowledge and prove your language level',
                           style: TextStyle(
                             fontFamily: 'Metropolis',
                             fontSize: 13,
