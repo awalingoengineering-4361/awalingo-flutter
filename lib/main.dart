@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'services/android_push_api.dart';
 import 'services/android_push_platform.dart';
 import 'services/android_push_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // SystemChrome / SystemUiMode
 import 'config/app_config.dart';
@@ -20,6 +21,7 @@ import 'screens/app_shell.dart';
 import 'screens/main/request_screen.dart';
 import 'screens/main/profile_screen.dart';
 import 'services/route_observer.dart';
+import 'services/store_purchase_service.dart';
 import 'widgets/auth_guard.dart';
 
 Future<void> main() async {
@@ -63,6 +65,20 @@ Future<void> main() async {
     accessToken: () =>
         Supabase.instance.client.auth.currentSession?.accessToken,
   );
+  // App Store / Google Play billing for cowries in the store builds; other
+  // platforms keep Paystack (see TopUpCowriesModal).
+  if (!kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.android)) {
+    StorePurchaseService.instance = StorePurchaseService(
+      store: defaultTargetPlatform == TargetPlatform.iOS
+          ? CowryStore.appStore
+          : CowryStore.googlePlay,
+      billing: PluginStoreBilling(),
+      api: HttpStoreCreditApi(),
+      currentUserId: () => Supabase.instance.client.auth.currentUser?.id,
+    )..start();
+  }
   runApp(AwalingoApp(pushService: push));
 }
 
