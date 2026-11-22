@@ -1,7 +1,7 @@
-package com.example.awalingo
+package org.awalingo.app
 
 import android.content.Intent
-import com.example.awalingo.push.AndroidPushBridge
+import org.awalingo.app.push.AndroidPushBridge
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 

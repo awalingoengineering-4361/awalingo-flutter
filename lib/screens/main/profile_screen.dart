@@ -1,3 +1,5 @@
+import 'dart:async';
+import '../../services/store_purchase_service.dart';
 import 'account_deletion_screen.dart';
 import '../../widgets/android_push_setting.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
@@ -181,6 +183,15 @@ class _ProfileScreenState extends State<ProfileScreen> with RouteAware {
   int _unreadCount = 0;
   bool _loadDone = false;
   bool _moreExpanded = false;
+  StreamSubscription<String>? _storeCredits;
+
+  @override
+  void initState() {
+    super.initState();
+    _storeCredits = StorePurchaseService.instance?.credits.listen((owner) {
+      if (mounted && AuthProvider.of(context).user?.id == owner) unawaited(_load());
+    });
+  }
 
   @override
   void didChangeDependencies() {
@@ -195,6 +206,7 @@ class _ProfileScreenState extends State<ProfileScreen> with RouteAware {
 
   @override
   void dispose() {
+    _storeCredits?.cancel();
     appRouteObserver.unsubscribe(this);
     super.dispose();
   }
@@ -217,7 +229,7 @@ class _ProfileScreenState extends State<ProfileScreen> with RouteAware {
         _service.loadProfile(userId),
         _notificationService.unreadCount(userId),
       ]);
-      if (mounted) {
+      if (mounted && AuthProvider.of(context).user?.id == userId) {
         setState(() {
           _data = results[0] as _ProfileData;
           _unreadCount = results[1] as int;

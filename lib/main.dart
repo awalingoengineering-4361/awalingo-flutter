@@ -105,6 +105,7 @@ class _AwalingoAppState extends State<AwalingoApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _startSessionChecks();
+      unawaited(StorePurchaseService.instance?.recover());
     } else {
       _sessionCheckTimer?.cancel();
     }
@@ -186,6 +187,7 @@ class _AwalingoAppState extends State<AwalingoApp> with WidgetsBindingObserver {
       _pushAuthOwner = owner;
     }
     _pushTaps.setOwner(_authNotifier.user?.id);
+    unawaited(StorePurchaseService.instance?.recover());
     unawaited(widget.pushService?.reconcile(_authNotifier.user));
     final isAuth = _authNotifier.isAuthenticated;
     if (isAuth && !_wasAuthenticated) {

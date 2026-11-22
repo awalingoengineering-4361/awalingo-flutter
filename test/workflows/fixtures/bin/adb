@@ -30,7 +30,7 @@ case "${1:-}" in
     destination="${3:-}"
     mkdir -p "$(dirname "$destination")"
     printf '<hierarchy><node package="%s" text="Awalingo" /></hierarchy>\n' \
-      "${AWALINGO_TEST_UI_PACKAGE:-com.example.awalingo}" >"$destination"
+      "${AWALINGO_TEST_UI_PACKAGE:-org.awalingo.app}" >"$destination"
     ;;
   logcat)
     if [[ " $* " == *" -d "* ]]; then
@@ -44,8 +44,8 @@ case "${1:-}" in
         ;;
       *" dumpsys activity activities "*)
         printf 'topResumedActivity=ActivityRecord{123 %s/.MainActivity}\n' \
-          "${AWALINGO_TEST_FOREGROUND_PACKAGE:-com.example.awalingo}"
-        printf 'packageName=com.example.awalingo processName=com.example.awalingo\n'
+          "${AWALINGO_TEST_FOREGROUND_PACKAGE:-org.awalingo.app}"
+        printf 'packageName=org.awalingo.app processName=org.awalingo.app\n'
         ;;
       *" am start -W "*)
         printf 'Status: ok\n'

@@ -91,8 +91,7 @@ Release startup rejects `.env` fallback and requires these production origins:
 debug mode; other backend origins must use HTTPS. If production domains change,
 update the allowlist in `lib/config/app_config.dart` as well as the JSON config.
 This guard runs when the app starts, not during bundle compilation. The bundle
-command does not replace release signing, launching and verifying the release
-artifact, or the Play Console submission steps.
+command requires an upload key. See the [Google Play release checklist](docs/setup/google-play-release.md) for signing, testing the installed bundle, and submitting it.
 
 ### Verify a runtime change
 

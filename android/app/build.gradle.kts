@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.google.gms.google-services")
     id("com.android.application")
@@ -5,8 +8,25 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val uploadKeyFile = rootProject.file("key.properties")
+val uploadKey = Properties().apply {
+    if (uploadKeyFile.isFile) FileInputStream(uploadKeyFile).use { load(it) }
+}
+val requiredUploadKeyFields = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+val validateReleaseSigning = tasks.register("validateReleaseSigning") {
+    doLast {
+        check(uploadKeyFile.isFile && requiredUploadKeyFields.all {
+            !uploadKey.getProperty(it).isNullOrBlank() && uploadKey.getProperty(it) != "REPLACE_LOCALLY"
+        }) { "Release signing requires android/key.properties. See android/key.properties.example." }
+        check(file(uploadKey.getProperty("storeFile")).isFile) { "The configured upload keystore does not exist." }
+    }
+}
+tasks.configureEach {
+    if (name == "preReleaseBuild") dependsOn(validateReleaseSigning)
+}
+
 android {
-    namespace = "com.example.awalingo"
+    namespace = "org.awalingo.app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -16,8 +36,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.awalingo"
+        applicationId = "org.awalingo.app"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
@@ -27,11 +46,19 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("release") {
+            if (requiredUploadKeyFields.all { !uploadKey.getProperty(it).isNullOrBlank() }) {
+                storeFile = file(uploadKey.getProperty("storeFile"))
+                storePassword = uploadKey.getProperty("storePassword")
+                keyAlias = uploadKey.getProperty("keyAlias")
+                keyPassword = uploadKey.getProperty("keyPassword")
+            }
+        }
+    }
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }

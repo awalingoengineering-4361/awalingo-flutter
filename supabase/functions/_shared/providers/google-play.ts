@@ -8,6 +8,8 @@ export interface PlayPurchase {
   orderId?: string;
   accountId?: string;
   status: "SUCCESSFUL" | "FAILED" | "PENDING";
+  quantity: number;
+  testPurchase: boolean;
   raw: unknown;
 }
 
@@ -44,6 +46,7 @@ async function accessToken(): Promise<string> {
   );
   const response = await fetch(tokenUri, {
     method: "POST",
+    signal: AbortSignal.timeout(15_000),
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
@@ -62,7 +65,7 @@ export async function verifyPurchase(productId: string, purchaseToken: string): 
   const response = await fetch(
     `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(packageName)}` +
       `/purchases/products/${encodeURIComponent(productId)}/tokens/${encodeURIComponent(purchaseToken)}`,
-    { headers: { Authorization: `Bearer ${await accessToken()}` } },
+    { headers: { Authorization: `Bearer ${await accessToken()}` }, signal: AbortSignal.timeout(15_000) },
   );
   if (response.status === 404 || response.status === 400) return null;
   if (!response.ok) {
@@ -75,6 +78,31 @@ export async function verifyPurchase(productId: string, purchaseToken: string): 
     orderId: body.orderId ?? undefined,
     accountId: body.obfuscatedExternalAccountId ?? undefined,
     status,
+    quantity: body.quantity ?? 1,
+    testPurchase: body.purchaseType === 0,
     raw: body,
   };
+}
+
+
+/** Only Google's authenticated API supplies refund input, never a public webhook body. */
+export async function listVoidedPurchases(page?: string): Promise<{
+  purchases: { purchaseToken: string }[]; nextPage?: string;
+}> {
+  const packageName = Deno.env.get("GOOGLE_PLAY_PACKAGE_NAME") ?? "";
+  const url = new URL(`https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(packageName)}/purchases/voidedpurchases`);
+  url.searchParams.set("maxResults", "1000");
+  url.searchParams.set("type", "0");
+  url.searchParams.set("includeQuantityBasedPartialRefund", "true");
+  // Omitting startTime uses Google's complete 30-day window; each hourly
+  // run overlaps, so missed jobs and duplicate pages cannot lose a refund.
+  if (page) url.searchParams.set("token", page);
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${await accessToken()}` },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) throw new Error(`Google voided purchases lookup failed: ${response.status}`);
+  const body = await response.json();
+  if (body.voidedPurchases !== undefined && !Array.isArray(body.voidedPurchases)) throw new Error("Invalid voided purchases response");
+  return { purchases: body.voidedPurchases ?? [], nextPage: body.tokenPagination?.nextPageToken ?? undefined };
 }

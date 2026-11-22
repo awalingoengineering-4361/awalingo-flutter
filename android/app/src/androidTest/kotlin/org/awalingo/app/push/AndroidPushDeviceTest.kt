@@ -1,4 +1,4 @@
-package com.example.awalingo.push
+package org.awalingo.app.push
 
 import android.app.NotificationManager
 import android.accessibilityservice.AccessibilityServiceInfo

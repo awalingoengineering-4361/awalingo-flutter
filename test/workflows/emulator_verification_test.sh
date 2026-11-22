@@ -124,6 +124,22 @@ test_emulator_verification_rejects_app_only_present_in_activity_history() {
   fi
 }
 
+test_explicit_serial_does_not_install_on_another_running_emulator() {
+  local command_log="$test_root/explicit.log"
+  local device_state="$test_root/explicit.device"
+  local artifact_dir="$test_root/explicit-artifacts"
+  touch "$device_state"
+  AWALINGO_DEVICE_SERIAL=emulator-5558 run_with_fakes \
+    "$command_log" "$device_state" "$artifact_dir" \
+    "$project_root/scripts/verify-android-emulator" >/dev/null
+  grep -q '^adb -s emulator-5558 install -r ' "$command_log" ||
+    fail "verification installed on another running emulator instead of the explicit device"
+  if grep -q '^adb -s emulator-5554 ' "$command_log"; then
+    fail "verification touched the unrelated running emulator"
+  fi
+}
+
+test_explicit_serial_does_not_install_on_another_running_emulator
 test_verify_change_runs_checks_before_emulator_and_captures_evidence
 test_emulator_verification_launches_configured_avd_when_needed
 test_emulator_verification_fails_on_fatal_app_log

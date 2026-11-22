@@ -1,4 +1,4 @@
-package com.example.awalingo.push
+package org.awalingo.app.push
 
 import android.Manifest
 import android.app.NotificationChannel
@@ -12,8 +12,8 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import com.example.awalingo.MainActivity
-import com.example.awalingo.R
+import org.awalingo.app.MainActivity
+import org.awalingo.app.R
 import org.json.JSONObject
 
 class PushNotifications(private val context: Context) {
@@ -50,7 +50,7 @@ class PushNotifications(private val context: Context) {
     fun cancelAll() = manager.cancelAll()
     companion object {
         const val CHANNEL = "awalingo_updates"
-        const val ACTION_TAP = "com.example.awalingo.PUSH_TAP"
+        const val ACTION_TAP = "org.awalingo.app.PUSH_TAP"
         const val EXTRA_PAYLOAD = "awalingo_push_payload"
     }
 }

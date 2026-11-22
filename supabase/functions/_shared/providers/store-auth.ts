@@ -11,7 +11,7 @@ function encodeJson(value: unknown): string {
   return base64Url(new TextEncoder().encode(JSON.stringify(value)));
 }
 
-function pemToDer(pem: string): Uint8Array {
+function pemToDer(pem: string): Uint8Array<ArrayBuffer> {
   const body = pem
     .replace(/\\n/g, "\n")
     .replace(/-----(BEGIN|END) [A-Z ]+-----/g, "")

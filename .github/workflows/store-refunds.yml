@@ -1,0 +1,31 @@
+name: Google Play refund reconciliation
+
+'on':
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-store-refunds
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    # Enable this repository variable only after SQL, function and secrets are
+    # deployed and verified. A missing credential then fails visibly.
+    if: vars.COWRY_STORE_REFUNDS_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Reconcile the full Google voided-purchase window
+        env:
+          RECONCILE_SECRET: ${{ secrets.COWRY_STORE_RECONCILE_SECRET }}
+        run: |
+          test -n "$RECONCILE_SECRET"
+          curl --fail-with-body --silent --show-error --max-time 240 \
+            --request POST \
+            --header "Authorization: Bearer $RECONCILE_SECRET" \
+            'https://auth.awalingo.org/functions/v1/cowry-store-reconcile'

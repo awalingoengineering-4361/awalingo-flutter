@@ -15,6 +15,7 @@ export interface StoreTransaction {
   currency: string;
   status: "SUCCESSFUL" | "FAILED" | "PENDING";
   environment: string;
+  quantity: number;
   raw: unknown;
 }
 
@@ -50,7 +51,7 @@ export async function verifyTransaction(transactionId: string): Promise<StoreTra
   for (const baseUrl of [PRODUCTION_URL, SANDBOX_URL]) {
     const response = await fetch(
       `${baseUrl}/inApps/v1/transactions/${encodeURIComponent(transactionId)}`,
-      { headers: { Authorization: `Bearer ${token}` } },
+      { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) },
     );
     if (response.status === 404) continue;
     if (!response.ok) {
@@ -69,6 +70,7 @@ export async function verifyTransaction(transactionId: string): Promise<StoreTra
       currency: typeof info.currency === "string" ? info.currency : "",
       status: info.revocationDate ? "FAILED" : "SUCCESSFUL",
       environment: String(info.environment ?? ""),
+      quantity: typeof info.quantity === "number" ? info.quantity : 1,
       raw: info,
     };
   }

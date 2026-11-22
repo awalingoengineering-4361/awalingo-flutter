@@ -7,9 +7,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:288087666317:android:10276eb73e6edf69ba7cc4",
+        "mobilesdk_app_id": "1:288087666317:android:046770bc7ad9f732ba7cc4",
         "android_client_info": {
-          "package_name": "com.example.awalingo"
+          "package_name": "org.awalingo.app"
         }
       },
       "oauth_client": [

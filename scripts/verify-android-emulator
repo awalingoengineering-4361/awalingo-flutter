@@ -9,7 +9,7 @@ repository_root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
 cd "$repository_root"
 
 emulator_id="${AWALINGO_EMULATOR_ID:-Pixel_7_Pro_API_34}"
-app_id="${AWALINGO_APP_ID:-com.example.awalingo}"
+app_id="${AWALINGO_APP_ID:-org.awalingo.app}"
 main_activity="${AWALINGO_MAIN_ACTIVITY:-.MainActivity}"
 timeout_seconds="${AWALINGO_EMULATOR_TIMEOUT_SECONDS:-180}"
 launch_wait_seconds="${AWALINGO_LAUNCH_WAIT_SECONDS:-5}"
@@ -50,7 +50,11 @@ find_emulator() {
   "$adb_bin" devices | awk '$2 == "device" && $1 ~ /^emulator-/ { print $1; exit }'
 }
 
-device_serial="$(find_emulator)"
+device_serial="${AWALINGO_DEVICE_SERIAL:-$(find_emulator)}"
+if [[ -n "${AWALINGO_DEVICE_SERIAL:-}" && "$("$adb_bin" -s "$device_serial" get-state 2>/dev/null || true)" != device ]]; then
+  printf 'Configured verification device %s is unavailable.\n' "$device_serial" >&2
+  exit 70
+fi
 if [[ -z "$device_serial" ]]; then
   printf 'Launching Android emulator %s...\n' "$emulator_id"
   flutter emulators --launch "$emulator_id"

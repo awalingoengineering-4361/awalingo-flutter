@@ -1,0 +1,6 @@
+# Copy to android/key.properties (ignored). Keep the real key outside Git.
+# Use an absolute storeFile path. Do not put passwords in Flutter JSON files.
+storeFile=/absolute/path/to/awalingo-upload.jks
+storePassword=REPLACE_LOCALLY
+keyAlias=upload
+keyPassword=REPLACE_LOCALLY
