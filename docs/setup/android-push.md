@@ -1,7 +1,7 @@
 # Android push setup and controlled delivery check
 
 Issue 77 uses Firebase project **awalingo** (288087666317), package
-`com.example.awalingo`. Android only; iOS/APNs remains separate.
+`org.awalingo.app`. Android only; iOS/APNs remains separate.
 The Android SDK config is public application configuration. Sender private keys
 belong only in backend secret storage. Firebase Authentication and Firestore are
 not used.

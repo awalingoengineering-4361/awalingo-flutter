@@ -1,4 +1,4 @@
--- Run once in the Supabase SQL editor for project cmcuzyqkwmprlwmdviys.
+-- Apply to the explicitly selected environment after review and approval.
 --
 -- Atomic credit step for the cowry-payment-callback Edge Function. Mirrors
 -- fulfillVerifiedCowryPayment + updateUserCowryBalance from the web app
@@ -95,3 +95,7 @@ begin
   return jsonb_build_object('success', true, 'ledgerId', ledger_id, 'cowryBalance', total);
 end;
 $$;
+
+-- Only verified server-side provider adapters may authorize wallet credit.
+revoke all on function public.credit_cowry_payment(text, text, text, jsonb) from public, anon, authenticated;
+grant execute on function public.credit_cowry_payment(text, text, text, jsonb) to service_role;

@@ -42,3 +42,18 @@ jobs:
 
       - name: Run quality checks
         run: scripts/verify-ci
+
+  store-backend:
+    name: Store backend verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Test store authorization and fulfillment policy
+        run: node --experimental-strip-types --test supabase/functions/_shared/*.test.ts supabase/functions/cowry-store-purchase/*.test.ts supabase/functions/cowry-store-reconcile/*.test.ts
+      - name: Type-check Edge Functions
+        run: npx --yes deno@2.9.6 check supabase/functions/cowry-store-purchase/index.ts supabase/functions/cowry-store-reconcile/index.ts
+      - name: Test isolated refund database transactions
+        run: bash test/database/store_refunds_test.sh

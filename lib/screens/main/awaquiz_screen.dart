@@ -1,3 +1,4 @@
+import '../../services/store_purchase_service.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -375,6 +376,7 @@ class AwaQuizScreen extends StatefulWidget {
 class _AwaQuizScreenState extends State<AwaQuizScreen> {
   static _AwaQuizScreenState? _instance;
 
+  StreamSubscription<String>? _storeCredits;
   final _service = _AwaQuizService();
   bool _loading = true;
   Object? _error;
@@ -388,6 +390,10 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
   void initState() {
     super.initState();
     _instance = this;
+    _storeCredits = StorePurchaseService.instance?.credits.listen((owner) {
+      if (mounted && AuthProvider.of(context).user?.id == owner)
+        unawaited(_load());
+    });
     if (widget.languageId != null) {
       _languageId = widget.languageId!;
       _communityName = widget.communityName ?? 'Community';
@@ -397,6 +403,7 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
 
   @override
   void dispose() {
+    _storeCredits?.cancel();
     if (identical(_instance, this)) _instance = null;
     super.dispose();
   }
@@ -422,14 +429,19 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
             .select('language:languages!languageId(id, name)')
             .eq('userId', userId)
             .maybeSingle();
-        if (!mounted || generation != _loadGeneration) return;
+        if (!mounted ||
+            generation != _loadGeneration ||
+            AuthProvider.of(context).user?.id != userId)
+          return;
         final lang = row?['language'] as Map<String, dynamic>?;
         _languageId = (lang?['id'] as int?) ?? 1;
         _communityName = (lang?['name'] as String?) ?? 'Community';
       }
 
       final data = await _service.loadOverview(userId, _languageId);
-      if (mounted && generation == _loadGeneration) {
+      if (mounted &&
+          generation == _loadGeneration &&
+          AuthProvider.of(context).user?.id == userId) {
         setState(() {
           _stages = data.stages;
           _cowryBalance = data.cowryBalance;
@@ -486,7 +498,7 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
   Future<void> _showTopUpModal() async {
     final result = await showDialog<CowryCheckoutResult>(
       context: context,
-      builder: (_) => const TopUpCowriesModal(returnTo: 'awaquiz'),
+      builder: (_) => TopUpCowriesModal(returnTo: 'awaquiz'),
     );
     if (!mounted) return;
     if (result == CowryCheckoutResult.success) {
@@ -501,6 +513,14 @@ class _AwaQuizScreenState extends State<AwaQuizScreen> {
     } else if (result == CowryCheckoutResult.failed) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Payment failed. Please try again.')),
+      );
+    } else if (result == CowryCheckoutResult.pending) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Payment is processing. Your cowries will be added once it completes.',
+          ),
+        ),
       );
     }
   }

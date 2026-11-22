@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/payment_service.dart';
+import '../services/store_purchase_service.dart';
 import '../services/webview_support.dart';
 import '../theme/app_theme.dart';
 import 'cowry_checkout_webview.dart';
@@ -13,22 +14,35 @@ import 'cowry_checkout_webview.dart';
 // checkout URL in-app (CowryCheckoutScreen) instead of a full page redirect.
 // Shared between the AwaQuiz and Profile "Buy Cowries" entry points —
 // `returnTo` differs between them and is passed through for parity/logging.
+//
+// In the iOS/Android builds (when a StorePurchaseService is running) cowries
+// are sold through the App Store / Google Play instead, as both stores
+// require for virtual currency; Paystack is only offered elsewhere.
 class TopUpCowriesModal extends StatefulWidget {
   final String returnTo; // 'awaquiz' | 'profile'
-  const TopUpCowriesModal({super.key, required this.returnTo});
+  final StorePurchaseService? storePurchases;
+  TopUpCowriesModal({
+    super.key,
+    required this.returnTo,
+    StorePurchaseService? storePurchases,
+  }) : storePurchases = storePurchases ?? StorePurchaseService.instance;
 
   @override
   State<TopUpCowriesModal> createState() => _TopUpCowriesModalState();
 }
 
 class _TopUpCowriesModalState extends State<TopUpCowriesModal> {
-  final _payments = PaymentService();
+  // Lazy: only the Paystack path needs it, and it touches Supabase.instance.
+  late final _payments = PaymentService();
   bool _loadingOptions = true;
   PaymentOptions? _options;
   String? _optionsError;
   String? _selectedProviderId;
   String? _startingPackageId;
   String? _error;
+  List<StoreCowryPackage>? _storePackages;
+
+  StorePurchaseService? get _store => widget.storePurchases;
 
   @override
   void initState() {
@@ -37,6 +51,8 @@ class _TopUpCowriesModalState extends State<TopUpCowriesModal> {
   }
 
   Future<void> _loadOptions() async {
+    final store = _store;
+    if (store != null) return _loadStorePackages(store);
     setState(() {
       _loadingOptions = true;
       _optionsError = null;
@@ -57,6 +73,49 @@ class _TopUpCowriesModalState extends State<TopUpCowriesModal> {
         });
       }
     }
+  }
+
+  Future<void> _loadStorePackages(StorePurchaseService store) async {
+    setState(() {
+      _loadingOptions = true;
+      _optionsError = null;
+    });
+    try {
+      final packages = await store.loadPackages();
+      if (!mounted) return;
+      setState(() {
+        _storePackages = packages;
+        _loadingOptions = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _optionsError = 'Payment options are unavailable: $e';
+          _loadingOptions = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _buyFromStore(StoreCowryPackage pkg) async {
+    setState(() {
+      _startingPackageId = pkg.id;
+      _error = null;
+    });
+    final result = await _store!.buy(pkg);
+    if (!mounted) return;
+    if (result == CowryCheckoutResult.cancelled) {
+      setState(() => _startingPackageId = null);
+      return;
+    }
+    if (result == CowryCheckoutResult.failed) {
+      setState(() {
+        _startingPackageId = null;
+        _error = 'Payment could not be completed. Please try again.';
+      });
+      return;
+    }
+    Navigator.of(context).pop(result);
   }
 
   PaymentProviderOption? get _selectedProvider {
@@ -182,6 +241,36 @@ class _TopUpCowriesModalState extends State<TopUpCowriesModal> {
                 onPressed: _loadOptions,
                 child: const Text('Retry', style: TextStyle(fontFamily: 'Metropolis')),
               ),
+            ] else if (_storePackages != null) ...[
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  _storePackages!.isEmpty
+                      ? 'Top-ups are currently unavailable.'
+                      : 'Pay with ${_store!.store.label}',
+                  style: TextStyle(fontFamily: 'Metropolis', fontSize: 13, color: c.mutedForeground),
+                ),
+              ),
+              if (_error != null) ...[
+                Text(
+                  _error!,
+                  style: const TextStyle(
+                    fontFamily: 'Metropolis',
+                    fontSize: 12,
+                    color: Color(0xFFDC2626),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+              for (final pkg in _storePackages!)
+                _packageRow(
+                  c,
+                  id: pkg.id,
+                  name: pkg.name,
+                  cowries: pkg.cowries,
+                  price: pkg.price,
+                  onTap: () => _buyFromStore(pkg),
+                ),
             ] else if (_options!.providers.isEmpty)
               Text(
                 'Top-ups are currently unavailable.',
@@ -249,70 +338,88 @@ class _TopUpCowriesModalState extends State<TopUpCowriesModal> {
                 const SizedBox(height: 8),
               ],
               for (final pkg in _selectedProvider?.packages ?? const <PaymentPackageOption>[])
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: GestureDetector(
-                    onTap: _startingPackageId != null ? null : () => _pay(pkg),
-                    child: Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: c.secondary,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: c.border),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  pkg.name,
-                                  style: TextStyle(
-                                    fontFamily: 'Metropolis',
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14,
-                                    color: c.foreground,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  '🐚 ${pkg.cowries} cowries',
-                                  style: TextStyle(
-                                    fontFamily: 'Metropolis',
-                                    fontSize: 12,
-                                    color: c.mutedForeground,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (_startingPackageId == pkg.id)
-                            SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: c.primary,
-                              ),
-                            )
-                          else
-                            Text(
-                              _formatAmount(pkg.amount, _options!.currency),
-                              style: TextStyle(
-                                fontFamily: 'Metropolis',
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15,
-                                color: c.foreground,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
+                _packageRow(
+                  c,
+                  id: pkg.id,
+                  name: pkg.name,
+                  cowries: pkg.cowries,
+                  price: _formatAmount(pkg.amount, _options!.currency),
+                  onTap: () => _pay(pkg),
                 ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _packageRow(
+    AppColorScheme c, {
+    required String id,
+    required String name,
+    required int cowries,
+    required String price,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: GestureDetector(
+        onTap: _startingPackageId != null ? null : onTap,
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: c.secondary,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: c.border),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: TextStyle(
+                        fontFamily: 'Metropolis',
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: c.foreground,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '🐚 $cowries cowries',
+                      style: TextStyle(
+                        fontFamily: 'Metropolis',
+                        fontSize: 12,
+                        color: c.mutedForeground,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (_startingPackageId == id)
+                SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: c.primary,
+                  ),
+                )
+              else
+                Text(
+                  price,
+                  style: TextStyle(
+                    fontFamily: 'Metropolis',
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                    color: c.foreground,
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
