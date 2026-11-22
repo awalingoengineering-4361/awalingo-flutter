@@ -90,7 +90,26 @@ class AwalingoApp extends StatefulWidget {
   State<AwalingoApp> createState() => _AwalingoAppState();
 }
 
-class _AwalingoAppState extends State<AwalingoApp> {
+class _AwalingoAppState extends State<AwalingoApp> with WidgetsBindingObserver {
+  Timer? _sessionCheckTimer;
+
+  void _startSessionChecks() {
+    _sessionCheckTimer?.cancel();
+    unawaited(_authNotifier.revalidateSession());
+    _sessionCheckTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      unawaited(_authNotifier.revalidateSession());
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startSessionChecks();
+    } else {
+      _sessionCheckTimer?.cancel();
+    }
+  }
+
   late final AuthNotifier _authNotifier = AuthNotifier(
     beforeSignOut: _prepareForSignOut,
   );
@@ -131,6 +150,8 @@ class _AwalingoAppState extends State<AwalingoApp> {
     _wasAuthenticated = _authNotifier.isAuthenticated;
     _pushAuthOwner = _authNotifier.user?.id;
     _authNotifier.addListener(_onAuthChange);
+    WidgetsBinding.instance.addObserver(this);
+    _startSessionChecks();
     _pushTaps.setOwner(_authNotifier.user?.id);
     final push = widget.pushService;
     if (push != null) {
@@ -176,11 +197,19 @@ class _AwalingoAppState extends State<AwalingoApp> {
         (_) => false,
       );
     }
+    if (!isAuth && _wasAuthenticated) {
+      _navigatorKey.currentState?.pushNamedAndRemoveUntil(
+        '/signin',
+        (_) => false,
+      );
+    }
     _wasAuthenticated = isAuth;
   }
 
   @override
   void dispose() {
+    _sessionCheckTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _pushTapSubscription?.cancel();
     _authNotifier.removeListener(_onAuthChange);
     _authNotifier.dispose();

@@ -157,7 +157,7 @@ class _AccountDeletionScreenState extends State<AccountDeletionScreen> {
                 ),
                 const SizedBox(height: 16),
                 const Text(
-                  'Sign in again before submitting if your session is older than ten minutes. Requests are processed within 30 days. After confirmation, the request cannot be cancelled in the app.',
+                  'Type DELETE to confirm your request. Requests are processed within 30 days. After confirmation, the request cannot be cancelled in the app.',
                 ),
                 const SizedBox(height: 16),
                 const Text(
@@ -205,7 +205,7 @@ class _AccountDeletionScreenState extends State<AccountDeletionScreen> {
                         ).pushNamedAndRemoveUntil('/signin', (_) => false);
                       }
                     },
-                    child: const Text('Sign out and sign in again'),
+                    child: const Text('Sign in to continue'),
                   ),
               ],
             ],

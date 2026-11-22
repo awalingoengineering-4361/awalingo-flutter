@@ -45,20 +45,10 @@ class CertificateExportService {
     : _share = share ?? SharePlus.instance.share;
 
   Future<Uint8List> createPdf(CertificateDetails details) async {
-    Uint8List? logoBytes;
-    try {
-      final logo = await rootBundle.load(
-        'assets/branding/logo-wordmark-dark.png',
-      );
-      logoBytes = logo.buffer.asUint8List();
-    } catch (_) {
-      // The existing certificate renderer also supports a text-only logo.
-    }
     return buildAwaQuizCertificatePdf(
       language: details.language,
       levelLabel: details.levelLabel,
       recipientName: details.recipientName,
-      logoBytes: logoBytes,
     );
   }
 
@@ -77,22 +67,11 @@ class CertificateExportService {
       ShareParams(
         files: [XFile.fromData(bytes, mimeType: 'image/png')],
         fileNameOverrides: [details.filename('png')],
-        text: details.message,
+        // Some receiving apps reject mixed image/text shares. The caption
+        // remains available through the separate Copy message action.
         sharePositionOrigin: bounds,
       ),
     );
     // A chooser result cannot prove that a receiving app sent the content.
-  }
-
-  Future<void> sharePdf(
-    CertificateDetails details,
-    Uint8List bytes,
-    Rect bounds,
-  ) async {
-    await Printing.sharePdf(
-      bytes: bytes,
-      filename: details.filename('pdf'),
-      bounds: bounds,
-    );
   }
 }

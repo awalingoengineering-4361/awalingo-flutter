@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:awalingo/services/certificate_export_service.dart';
+import 'package:awalingo/services/certificate_fonts.dart';
 import 'package:awalingo/widgets/certificate_actions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,8 +16,8 @@ class FakeExporter extends CertificateExportService {
   int imageBuilds = 0;
   int pdfBuilds = 0;
   int imageShares = 0;
-  int pdfShares = 0;
   bool fail = false;
+  Object? renderError;
   bool failShare = false;
   Completer<Uint8List>? pending;
   Completer<void>? pendingShare;
@@ -26,6 +27,7 @@ class FakeExporter extends CertificateExportService {
   @override
   Future<Uint8List> createPdf(CertificateDetails details) async {
     pdfBuilds++;
+    if (renderError != null) throw renderError!;
     if (fail) throw StateError('private render failure');
     return Uint8List.fromList([1]);
   }
@@ -33,6 +35,7 @@ class FakeExporter extends CertificateExportService {
   @override
   Future<Uint8List> createImage(CertificateDetails details) async {
     imageBuilds++;
+    if (renderError != null) throw renderError!;
     if (fail) throw StateError('private render failure');
     return pending == null ? Uint8List.fromList([2]) : pending!.future;
   }
@@ -48,16 +51,6 @@ class FakeExporter extends CertificateExportService {
     shared.add(details);
     origin = bounds;
     if (pendingShare != null) await pendingShare!.future;
-  }
-
-  @override
-  Future<void> sharePdf(
-    CertificateDetails details,
-    Uint8List bytes,
-    Rect bounds,
-  ) async {
-    pdfShares++;
-    origin = bounds;
   }
 }
 
@@ -81,6 +74,37 @@ void certificateActionsTests() {
     await tester.pump();
   }
 
+  testWidgets('offers one certificate share action and separate caption copy', (
+    tester,
+  ) async {
+    await mount(tester);
+    expect(find.text('Share Certificate'), findsOneWidget);
+    expect(find.byType(OutlinedButton), findsNothing);
+    expect(find.text('Copy message'), findsOneWidget);
+    await tester.tap(find.text('Share Certificate'));
+    await tester.pumpAndSettle();
+    expect(exporter.imageShares, 1);
+    expect(exporter.pdfBuilds, 0);
+  });
+
+  testWidgets(
+    'unsupported text explains the failure and does not open a share sheet',
+    (tester) async {
+      exporter.renderError = const UnsupportedCertificateCharacters();
+      await mount(tester);
+      await tester.tap(find.text('Share Certificate'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(const UnsupportedCertificateCharacters().message),
+        findsOneWidget,
+      );
+      expect(exporter.imageShares, 0);
+      exporter.renderError = null;
+      await tester.tap(find.text('Share Certificate'));
+      await tester.pumpAndSettle();
+      expect(exporter.imageShares, 1);
+    },
+  );
   testWidgets('same certificate can be shared twice after the chooser closes', (
     tester,
   ) async {
@@ -97,25 +121,24 @@ void certificateActionsTests() {
     }
   });
 
-  testWidgets(
-    'double tap and PDF action cannot start another export while busy',
-    (tester) async {
-      exporter.pending = Completer<Uint8List>();
-      await mount(tester);
-      await tester.tap(find.text('Share Certificate'));
-      await tester.tap(find.text('Share Certificate'));
-      await tester.pump();
-      expect(exporter.imageBuilds, 1);
-      final download = tester.widget<OutlinedButton>(
-        find.widgetWithText(OutlinedButton, 'Download Certificate'),
-      );
-      expect(download.onPressed, isNull);
-      exporter.pending!.complete(Uint8List.fromList([2]));
-      await tester.pumpAndSettle();
-      expect(exporter.imageShares, 1);
-      expect(exporter.pdfBuilds, 0);
-    },
-  );
+  testWidgets('double tap cannot start another share while preparing', (
+    tester,
+  ) async {
+    exporter.pending = Completer<Uint8List>();
+    await mount(tester);
+    await tester.tap(find.text('Share Certificate'));
+    await tester.tap(find.text('Share Certificate'));
+    await tester.pump();
+    expect(exporter.imageBuilds, 1);
+    expect(
+      tester.widget<ElevatedButton>(find.byType(ElevatedButton)).onPressed,
+      isNull,
+    );
+    exporter.pending!.complete(Uint8List.fromList([2]));
+    await tester.pumpAndSettle();
+    expect(exporter.imageShares, 1);
+    expect(exporter.pdfBuilds, 0);
+  });
 
   testWidgets('chooser cancellation restores actions without success claims', (
     tester,
@@ -137,29 +160,25 @@ void certificateActionsTests() {
     expect(find.byType(SnackBar), findsNothing);
   });
 
-  testWidgets(
-    'failed image export can be retried and PDF download still works',
-    (tester) async {
-      exporter.fail = true;
-      await mount(tester);
-      await tester.tap(find.text('Share Certificate'));
-      await tester.pumpAndSettle();
-      expect(
-        find.text('Unable to share certificate. Please try again.'),
-        findsOneWidget,
-      );
-      expect(find.textContaining('private'), findsNothing);
-      exporter.fail = false;
-      await tester.tap(find.text('Share Certificate'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Download Certificate'));
-      await tester.pumpAndSettle();
-      expect(exporter.imageBuilds, 2);
-      expect(exporter.imageShares, 1);
-      expect(exporter.pdfBuilds, 1);
-      expect(exporter.pdfShares, 1);
-    },
-  );
+  testWidgets('failed image export can be retried with the same share action', (
+    tester,
+  ) async {
+    exporter.fail = true;
+    await mount(tester);
+    await tester.tap(find.text('Share Certificate'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Unable to share certificate. Please try again.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('private'), findsNothing);
+    exporter.fail = false;
+    await tester.tap(find.text('Share Certificate'));
+    await tester.pumpAndSettle();
+    expect(exporter.imageBuilds, 2);
+    expect(exporter.imageShares, 1);
+    expect(exporter.pdfBuilds, 0);
+  });
 
   testWidgets(
     'leaving during generation does not open the native share sheet',
