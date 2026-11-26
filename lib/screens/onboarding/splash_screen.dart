@@ -48,7 +48,7 @@ class _SplashScreenState extends State<SplashScreen>
 
     final isLoggedIn = Supabase.instance.client.auth.currentUser != null;
     if (isLoggedIn) {
-      Navigator.of(context).pushReplacementNamed('/home');
+      Navigator.of(context).pushReplacementNamed('/community-setup');
       return;
     }
 

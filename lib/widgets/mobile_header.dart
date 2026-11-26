@@ -7,6 +7,7 @@ import '../services/auth_provider.dart';
 import '../services/theme_notifier.dart';
 import '../services/notification_router.dart';
 import '../screens/main/notifications_screen.dart';
+import 'country_flag.dart';
 import 'notification_preview_menu.dart';
 
 // Matches neolingo's NOTIFICATION_REFETCH_INTERVAL_MS (queryKeys.ts).
@@ -104,17 +105,6 @@ class _AppMobileHeaderState extends State<AppMobileHeader> with WidgetsBindingOb
     final meta = user?.userMetadata;
     final url = (meta?['avatar_url'] as String?) ?? (meta?['picture'] as String?);
     return (url != null && url.isNotEmpty) ? url : null;
-  }
-
-  // Converts a 2-letter ISO country code into its flag emoji, matching
-  // react-country-flag's rendering (falls back to 'NG' like the web app).
-  String _flagEmoji(String? countryCode) {
-    final code = (countryCode ?? 'NG').toUpperCase();
-    if (!RegExp(r'^[A-Z]{2}$').hasMatch(code)) return '🏳️';
-    const base = 0x1F1E6;
-    final first = base + (code.codeUnitAt(0) - 'A'.codeUnitAt(0));
-    final second = base + (code.codeUnitAt(1) - 'A'.codeUnitAt(0));
-    return String.fromCharCode(first) + String.fromCharCode(second);
   }
 
   // Each opening owns its loading and mutation state, so dismissing an old
@@ -300,7 +290,7 @@ class _AppMobileHeaderState extends State<AppMobileHeader> with WidgetsBindingOb
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(_flagEmoji(_communityFlagCode), style: const TextStyle(fontSize: 13)),
+                      Text(countryFlagEmoji(_communityFlagCode ?? 'NG'), style: const TextStyle(fontSize: 13)),
                       if ((_communityShort ?? '').isNotEmpty) ...[
                         const SizedBox(width: 6),
                         Text(

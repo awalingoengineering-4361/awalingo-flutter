@@ -62,11 +62,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
       name: _nameController.text.trim(),
     );
     if (!mounted) return;
-    if (success) {
-      // Mirrors Next.js: navigate to email verification after signup
+    if (success && !auth.isAuthenticated) {
       _showSuccess('Account created! Please check your email to verify your account.');
-      Navigator.of(context).pushReplacementNamed('/email-verification');
-    } else {
+      Navigator.of(context).pushReplacementNamed('/signin');
+    } else if (!success) {
       _showError(auth.error ?? 'Registration failed. Please try again.');
     }
   }

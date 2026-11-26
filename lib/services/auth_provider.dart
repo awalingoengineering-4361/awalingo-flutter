@@ -162,7 +162,7 @@ class AuthNotifier extends ChangeNotifier {
         password: password,
         name: name,
       );
-      _user = user;
+      _user = _service.currentUser;
       _isLoading = false;
       notifyListeners();
       return user != null;
