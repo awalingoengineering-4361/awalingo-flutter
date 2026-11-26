@@ -38,9 +38,7 @@ class _SignInScreenState extends State<SignInScreen> {
       _passwordController.text,
     );
     if (!mounted) return;
-    if (success) {
-      Navigator.of(context).pushReplacementNamed('/home');
-    } else {
+    if (!success) {
       _showError(auth.error ?? 'Login failed. Please check your credentials.');
     }
   }

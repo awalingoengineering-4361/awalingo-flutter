@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../services/auth_provider.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/app_buttons.dart';
+import '../../widgets/country_flag.dart';
 
 class LanguageSetupScreen extends StatefulWidget {
   const LanguageSetupScreen({super.key});
@@ -13,7 +16,9 @@ class _LanguageSetupScreenState extends State<LanguageSetupScreen> {
   final _db = Supabase.instance.client;
   bool _loading = true;
   bool _saving = false;
-  List<({int id, String name})> _languages = [];
+  bool _loadFailed = false;
+  List<({int id, String name, String? countryCode, bool isSupported})>
+  _languages = [];
   int? _selectedId;
 
   @override
@@ -24,51 +29,82 @@ class _LanguageSetupScreenState extends State<LanguageSetupScreen> {
 
   Future<void> _load() async {
     final userId = _db.auth.currentUser?.id;
+    if (userId == null) return;
+    setState(() {
+      _loading = true;
+      _loadFailed = false;
+    });
     try {
-      final langRows = await _db.from('languages').select('id, name').order('name', ascending: true);
-      final langs = (langRows as List).map((r) => (id: r['id'] as int, name: r['name'] as String)).toList();
-
-      int? currentId;
-      if (userId != null) {
-        final utl = await _db.from('user_target_languages').select('languageId').eq('userId', userId).maybeSingle();
-        currentId = utl?['languageId'] as int?;
+      final membership = await _db
+          .from('user_target_languages')
+          .select('languageId')
+          .eq('userId', userId)
+          .limit(1)
+          .maybeSingle();
+      if (!_ownsSetup(userId)) return;
+      if (membership != null) {
+        _openHome();
+        return;
       }
 
-      if (mounted) setState(() { _languages = langs; _selectedId = currentId; _loading = false; });
-    } catch (e) {
-      debugPrint('LanguageSetup load: $e');
-      if (mounted) setState(() => _loading = false);
+      final rows = await _db
+          .from('languages')
+          .select('id, name, icon, is_supported')
+          .or('icon.eq.NG,type.eq.LRL')
+          .order('name');
+      if (!_ownsSetup(userId)) return;
+      // Match the web picker's order, with Nigerian communities first.
+      setState(() {
+        _languages = [
+          for (final group in [true, false])
+            for (final row in rows)
+              if ((row['icon'] == 'NG') == group)
+                (
+                  id: row['id'] as int,
+                  name: row['name'] as String,
+                  countryCode: row['icon'] as String?,
+                  isSupported: row['is_supported'] == true,
+                ),
+        ];
+        _loading = false;
+      });
+    } catch (_) {
+      if (_ownsSetup(userId)) {
+        setState(() {
+          _loading = false;
+          _loadFailed = true;
+        });
+      }
     }
   }
 
+  bool _ownsSetup(String userId) =>
+      mounted && _db.auth.currentUser?.id == userId;
+
+  void _openHome() => Navigator.of(context).pushReplacementNamed('/home');
+
   Future<void> _save() async {
-    if (_selectedId == null) return;
+    final languageId = _selectedId;
     final userId = _db.auth.currentUser?.id;
-    if (userId == null) return;
+    if (userId == null || languageId == null || _saving) return;
     setState(() => _saving = true);
     try {
-      await _db.from('user_target_languages').upsert(
-        {'userId': userId, 'languageId': _selectedId},
-        onConflict: 'userId',
+      await _db.rpc(
+        'complete_community_onboarding',
+        params: {'p_language_id': languageId},
       );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Community updated!', style: TextStyle(fontFamily: 'Metropolis')),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
-        ));
-        Navigator.of(context).pop(true);
-      }
-    } catch (e) {
-      debugPrint('LanguageSetup save: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Failed to update. Please try again.', style: TextStyle(fontFamily: 'Metropolis')),
-          behavior: SnackBarBehavior.floating,
-        ));
+      if (_ownsSetup(userId)) _openHome();
+    } catch (_) {
+      if (_ownsSetup(userId)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not save your community. Please try again.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (_ownsSetup(userId)) setState(() => _saving = false);
     }
   }
 
@@ -79,80 +115,150 @@ class _LanguageSetupScreenState extends State<LanguageSetupScreen> {
     return Scaffold(
       backgroundColor: c.background,
       appBar: AppBar(
-        backgroundColor: c.card,
-        elevation: 0,
-        leading: BackButton(color: c.foreground),
-        title: Text('Awalingo Community', style: TextStyle(fontFamily: 'Parkinsans', fontSize: 17, fontWeight: FontWeight.w600, color: c.foreground)),
-        bottom: PreferredSize(preferredSize: const Size.fromHeight(1), child: Divider(height: 1, color: c.border)),
+        backgroundColor: c.background,
+        scrolledUnderElevation: 0,
+        automaticallyImplyLeading: false,
+        actionsPadding: const EdgeInsets.only(right: 16),
+        actions: [
+          TextButton(
+            onPressed: _saving ? null : () => AuthProvider.of(context).logout(),
+            child: const Text('Sign out'),
+          ),
+        ],
       ),
-      body: _loading
-          ? Center(child: CircularProgressIndicator(color: c.primary, strokeWidth: 2))
-          : Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
-                  child: Text(
-                    'Choose your community language. This sets the language you help translate into.',
-                    style: TextStyle(fontFamily: 'Metropolis', fontSize: 14, color: c.mutedForeground),
-                  ),
-                ),
-                Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
-                    itemCount: _languages.length,
-                    itemBuilder: (_, i) {
-                      final lang = _languages[i];
-                      final isSelected = _selectedId == lang.id;
-                      return GestureDetector(
-                        onTap: () => setState(() => _selectedId = lang.id),
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                          decoration: BoxDecoration(
-                            color: isSelected ? c.primary.withValues(alpha: 0.08) : c.card,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: isSelected ? c.primary : c.border,
-                              width: isSelected ? 1.5 : 1,
-                            ),
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: _loading
+                  ? const CircularProgressIndicator(strokeWidth: 2)
+                  : _loadFailed || _languages.isEmpty
+                  ? SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _loadFailed
+                                ? 'Could not load your community.'
+                                : 'No communities are available right now.',
+                            textAlign: TextAlign.center,
                           ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(lang.name,
-                                    style: TextStyle(
-                                        fontFamily: 'Metropolis',
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w500,
-                                        color: c.foreground)),
-                              ),
-                              if (isSelected) Icon(Icons.check_circle, color: c.primary, size: 20),
-                            ],
+                          const SizedBox(height: 12),
+                          OutlinedButton(
+                            onPressed: _load,
+                            style: AppButtonStyles.secondary(c),
+                            child: const Text('Retry'),
                           ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
+                        ],
+                      ),
+                    )
+                  : _buildPicker(c),
             ),
-      bottomNavigationBar: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: ElevatedButton(
-            onPressed: _selectedId == null || _saving ? null : _save,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: c.primary,
-              foregroundColor: c.primaryForeground,
-              minimumSize: const Size(double.infinity, 52),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: _saving
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : const Text('Save Community', style: TextStyle(fontFamily: 'Metropolis', fontSize: 15, fontWeight: FontWeight.w600)),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildPicker(AppColorScheme c) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Flexible(
+          child: SingleChildScrollView(
+            child: Material(
+              color: c.card,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+                side: BorderSide(color: c.border),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Semantics(
+                      header: true,
+                      child: Text(
+                        'Choose Your Awalingo Community',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: 'Parkinsans',
+                          fontSize: 24,
+                          fontWeight: FontWeight.w500,
+                          color: c.foreground,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Rep your mother tongue.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 14, color: c.mutedForeground),
+                    ),
+                    const SizedBox(height: 24),
+                    RadioGroup<int>(
+                      groupValue: _selectedId,
+                      onChanged: (id) => setState(() => _selectedId = id),
+                      child: Column(
+                        spacing: 12,
+                        children: [
+                          for (final language in _languages)
+                            Opacity(
+                              opacity: language.isSupported ? 1 : 0.5,
+                              child: RadioListTile<int>(
+                                value: language.id,
+                                enabled: language.isSupported && !_saving,
+                                controlAffinity:
+                                    ListTileControlAffinity.trailing,
+                                activeColor: c.foreground,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  side: BorderSide(color: c.border),
+                                ),
+                                secondary: language.countryCode == null
+                                    ? null
+                                    : ExcludeSemantics(
+                                        child: Text(
+                                          countryFlagEmoji(
+                                            language.countryCode!,
+                                          ),
+                                          style: const TextStyle(fontSize: 22),
+                                        ),
+                                      ),
+                                title: Text(
+                                  language.name,
+                                  style: const TextStyle(
+                                    fontFamily: 'Parkinsans',
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        ElevatedButton(
+          onPressed: _selectedId == null || _saving ? null : _save,
+          style: AppButtonStyles.primary(c).copyWith(
+            minimumSize: const WidgetStatePropertyAll(Size.fromHeight(58)),
+          ),
+          child: Text(_saving ? 'Completing Profile…' : 'Complete Profile'),
+        ),
+      ],
     );
   }
 }

@@ -15,6 +15,7 @@ import 'services/auth_provider.dart';
 import 'services/theme_notifier.dart';
 import 'screens/onboarding/splash_screen.dart';
 import 'screens/onboarding/onboarding_screens.dart';
+import 'screens/main/language_setup_screen.dart';
 import 'screens/auth/sign_in_screen.dart';
 import 'screens/auth/sign_up_screen.dart';
 import 'screens/app_shell.dart';
@@ -141,14 +142,9 @@ class _AwalingoAppState extends State<AwalingoApp> with WidgetsBindingObserver {
       _PushNavigationObserver((ready) {
         unawaited(_pushTaps.setReady(ready));
       });
-  // Track the auth state at startup so we only react to transitions,
-  // not to the initial session that the SplashScreen already handles.
-  late bool _wasAuthenticated;
-
   @override
   void initState() {
     super.initState();
-    _wasAuthenticated = _authNotifier.isAuthenticated;
     _pushAuthOwner = _authNotifier.user?.id;
     _authNotifier.addListener(_onAuthChange);
     WidgetsBinding.instance.addObserver(this);
@@ -182,30 +178,20 @@ class _AwalingoAppState extends State<AwalingoApp> with WidgetsBindingObserver {
 
   void _onAuthChange() {
     final owner = _authNotifier.user?.id;
-    if (owner != _pushAuthOwner) {
+    final ownerChanged = owner != _pushAuthOwner;
+    if (ownerChanged) {
       _pushAuthGeneration++;
       _pushAuthOwner = owner;
     }
     _pushTaps.setOwner(_authNotifier.user?.id);
     unawaited(StorePurchaseService.instance?.recover());
     unawaited(widget.pushService?.reconcile(_authNotifier.user));
-    final isAuth = _authNotifier.isAuthenticated;
-    if (isAuth && !_wasAuthenticated) {
-      // User just signed in (e.g. OAuth deep link returned on Android).
-      // Navigate to home and clear the back-stack so they can't go back
-      // to the sign-in screen.
+    if (ownerChanged) {
       _navigatorKey.currentState?.pushNamedAndRemoveUntil(
-        '/home',
+        owner == null ? '/signin' : '/community-setup',
         (_) => false,
       );
     }
-    if (!isAuth && _wasAuthenticated) {
-      _navigatorKey.currentState?.pushNamedAndRemoveUntil(
-        '/signin',
-        (_) => false,
-      );
-    }
-    _wasAuthenticated = isAuth;
   }
 
   @override
@@ -243,6 +229,9 @@ class _AwalingoAppState extends State<AwalingoApp> with WidgetsBindingObserver {
               '/onboarding1': (_) => const Onboarding1Screen(),
               '/onboarding4': (_) => const Onboarding4Screen(),
               '/onboarding5': (_) => const Onboarding5Screen(),
+              '/community-setup': (_) => const AuthGuard(
+                child: LanguageSetupScreen(),
+              ),
 
               // ── Auth ───────────────────────────────────────────
               // Force light theme on auth screens — they use AppColors (static
